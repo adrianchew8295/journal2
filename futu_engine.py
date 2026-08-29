@@ -1,97 +1,4 @@
-# 文件 3：futu_engine.py
-# 作用：富途 13 行参数抽取与 5M 交易回测引擎
-import datetime
-from datetime import timedelta
-import numpy as np
-import pandas as pd
-import pytz
-
-tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
-tz_ny = pytz.timezone("America/New_York")
-
-def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
-    if df_1h is None: return None
-    sub_1h = df_1h[df_1h.index <= as_of_ny_time].copy()
-    if len(sub_1h) < 25: return None
-
-    today_ny = as_of_ny_time.date()
-    df_rth = sub_1h[(sub_1h.index.hour > 9) | ((sub_1h.index.hour == 9) & (sub_1h.index.minute >= 30))]
-    df_rth = df_rth[df_rth.index.hour < 16]
-    past_dates = sorted(list(set(df_rth.index.date)))
-    past_dates = [d for d in past_dates if d < today_ny]
-
-    if past_dates:
-        prev_df = df_rth[df_rth.index.date == past_dates[-1]]
-        pdh_idx, pdl_idx = prev_df["High"].idxmax(), prev_df["Low"].idxmin()
-        pdh_val, pdl_val = float(prev_df.loc[pdh_idx, "High"]), float(prev_df.loc[pdl_idx, "Low"])
-        pdh_time, pdl_time = pdh_idx.strftime("%Y-%m-%d %H:%M ET"), pdl_idx.strftime("%Y-%m-%d %H:%M ET")
-    else:
-        pdh_val, pdl_val = float(sub_1h["High"].iloc[-10:].max()), float(sub_1h["Low"].iloc[-10:].min())
-        pdh_time, pdl_time = "Prior Session", "Prior Session"
-
-    sub_5m_pm = df_5m[(df_5m.index.date == today_ny) & (df_5m.index.hour >= 4) & (df_5m.index < as_of_ny_time)] if df_5m is not None else None
-    if sub_5m_pm is not None and not sub_5m_pm.empty:
-        pmh_idx, pml_idx = sub_5m_pm["High"].idxmax(), sub_5m_pm["Low"].idxmin()
-        pmh_val, pml_val = float(sub_5m_pm.loc[pmh_idx, "High"]), float(sub_5m_pm.loc[pml_idx, "Low"])
-        pmh_time, pml_time = pmh_idx.strftime("%Y-%m-%d %H:%M ET"), pml_idx.strftime("%Y-%m-%d %H:%M ET")
-        live_price = float(sub_5m_pm["Close"].iloc[-1])
-    else:
-        pmh_val, pml_val = float(sub_1h["High"].iloc[-4:].max()), float(sub_1h["Low"].iloc[-4:].min())
-        pmh_time, pml_time = "Recent 1H", "Recent 1H"
-        live_price = float(sub_1h["Close"].iloc[-1])
-
-    sub_1h["EMA20"] = sub_1h["Close"].ewm(span=20, adjust=False).mean()
-    sub_1h["SMA50"] = sub_1h["Close"].rolling(window=50).mean()
-
-    tr = np.maximum(sub_1h["High"] - sub_1h["Low"], np.maximum((sub_1h["High"] - sub_1h["Close"].shift(1)).abs(), (sub_1h["Low"] - sub_1h["Close"].shift(1)).abs()))
-    atr = float(tr.rolling(14).mean().iloc[-1]) if not np.isnan(tr.rolling(14).mean().iloc[-1]) else (live_price * 0.008)
-
-    subset = sub_1h.iloc[-60:].copy()
-    highs, lows, opens, closes, times = subset["High"].values, subset["Low"].values, subset["Open"].values, subset["Close"].values, subset.index
-
-    pivots_high, pivots_low = [], []
-    for i in range(2, len(subset) - 2):
-        if highs[i] == max(highs[i-2:i+3]): pivots_high.append((float(highs[i]), float(max(opens[i], closes[i])), times[i].strftime("%m-%d %H:%M ET")))
-        if lows[i] == min(lows[i-2:i+3]): pivots_low.append((float(min(opens[i], closes[i])), float(lows[i]), times[i].strftime("%m-%d %H:%M ET")))
-
-    valid_highs = [p for p in pivots_high if p[0] > live_price]
-    valid_highs.sort(key=lambda x: x[0])
-    sbr_top, sbr_bot, sbr_time = valid_highs[0] if len(valid_highs) >= 1 else (live_price + 1.2 * atr, live_price + 0.6 * atr, "Range High")
-    sbr2_top, sbr2_bot, sbr2_time = valid_highs[1] if len(valid_highs) >= 2 else (sbr_top + 1.2 * atr, sbr_top + 0.5 * atr, "Tier-2 High")
-
-    valid_lows = [p for p in pivots_low if p[1] < live_price]
-    valid_lows.sort(key=lambda x: x[1], reverse=True)
-    rbs_top, rbs_bot, rbs_time = valid_lows[0] if len(valid_lows) >= 1 else (live_price - 0.6 * atr, live_price - 1.2 * atr, "Range Low")
-    rbs2_top, rbs2_bot, rbs2_time = valid_lows[1] if len(valid_lows) >= 2 else (rbs_bot - 0.5 * atr, rbs_bot - 1.2 * atr, "Tier-2 Low")
-
-    ema20_now = float(sub_1h["EMA20"].iloc[-1])
-    sma50_now = float(sub_1h["SMA50"].iloc[-1]) if not np.isnan(sub_1h["SMA50"].iloc[-1]) else ema20_now
-    score_ma = 1 if (live_price > ema20_now and ema20_now >= sma50_now) else (-1 if (live_price < ema20_now and ema20_now <= sma50_now) else 0)
-
-    score_hhll = 0
-    if len(pivots_high) >= 2 and len(pivots_low) >= 2:
-        last_2_h, last_2_l = [p[0] for p in pivots_high[-2:]], [p[1] for p in pivots_low[-2:]]
-        if last_2_h[1] > last_2_h[0] and last_2_l[1] > last_2_l[0]: score_hhll = 1
-        elif last_2_h[1] < last_2_h[0] and last_2_l[1] < last_2_l[0]: score_hhll = -1
-
-    ema20_prev = float(sub_1h["EMA20"].iloc[-5])
-    ema_slope = (ema20_now - ema20_prev) / ema20_prev * 100
-    score_slope = 1 if ema_slope > 0.15 else (-1 if ema_slope < -0.15 else 0)
-
-    total_score = score_ma + score_hhll + score_slope
-    trend_bias = 1 if total_score >= 2 else (-1 if total_score <= -2 else 0)
-    bias_desc = "🟢 绿灯 (做多为主)" if trend_bias == 1 else ("🔴 红灯 (做空为主)" if trend_bias == -1 else "🟡 黄灯 (震荡防守)")
-
-    return {
-        "live_price": live_price, "TREND_BIAS": trend_bias, "BIAS_DESC": bias_desc,
-        "EMA20_1H": round(ema20_now, 2), "ATR_1H": round(atr, 2),
-        "SBR_TOP": sbr_top, "SBR_BOT": sbr_bot, "SBR_TIME": sbr_time,
-        "RBS_TOP": rbs_top, "RBS_BOT": rbs_bot, "RBS_TIME": rbs_time,
-        "SBR2_TOP": sbr2_top, "SBR2_BOT": sbr2_bot, "SBR2_TIME": sbr2_time,
-        "RBS2_TOP": rbs2_top, "RBS2_BOT": rbs2_bot, "RBS2_TIME": rbs2_time,
-        "PDH": pdh_val, "PDH_TIME": pdh_time, "PDL": pdl_val, "PDL_TIME": pdl_time,
-        "PMH": pmh_val, "PMH_TIME": pmh_time, "PML": pml_val, "PML_TIME": pml_time
-    }
+# 文件：futu_engine.py 裡面的 simulate_trades_with_2b 核心邏輯修正
 
 def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
     trades = []
@@ -179,11 +86,11 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
             
             if pos_type == 1:
                 if is_window_close: exit_flag, reason, exit_p = True, "24:00 纪律清仓", c
-                elif l <= sl_p: exit_flag, reason, exit_p = True, "SL (0.5 ATR)", sl_p
+                elif l <= sl_p: exit_flag, reason, exit_p = True, "SL (结构止损)", sl_p
                 elif h >= tp_p: exit_flag, reason, exit_p = True, "TP (1:2 止盈)", tp_p
             elif pos_type == -1:
                 if is_window_close: exit_flag, reason, exit_p = True, "24:00 纪律清仓", c
-                elif h >= sl_p: exit_flag, reason, exit_p = True, "SL (0.5 ATR)", sl_p
+                elif h >= sl_p: exit_flag, reason, exit_p = True, "SL (结构止损)", sl_p
                 elif l <= tp_p: exit_flag, reason, exit_p = True, "TP (1:2 止盈)", tp_p
 
             if exit_flag:
@@ -207,21 +114,19 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
             is_bstd = bool(day_5m["BUY_STD_SIG"].iloc[i])
             is_sstd = bool(day_5m["SELL_STD_SIG"].iloc[i])
 
-            sl_dist = 0.5 * atr_v
-            tp_dist = 1.0 * atr_v
-
+            # 100% 对齐富途牛牛公式的结构止损与 1:2 止盈
             if is_b2b or is_bstd:
                 in_pos, pos_type = True, 1
                 entry_p = c
-                sl_p = c - sl_dist
-                tp_p = c + tp_dist
+                sl_p = l - 0.5 * atr_v
+                tp_p = c + 2.0 * (c - sl_p)
                 entry_time_ny = cur_t_ny
                 futu_signal_tag = "▲▲ 2B 多" if is_b2b else "▲ CALL 多"
             elif is_s2b or is_sstd:
                 in_pos, pos_type = True, -1
                 entry_p = c
-                sl_p = c + sl_dist
-                tp_p = c - tp_dist
+                sl_p = h + 0.5 * atr_v
+                tp_p = c - 2.0 * (sl_p - c)
                 entry_time_ny = cur_t_ny
                 futu_signal_tag = "▼▼ 2B 空" if is_s2b else "▼ PUT 空"
 
