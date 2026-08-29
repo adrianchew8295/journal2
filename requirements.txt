@@ -1,0 +1,8 @@
+# 文件 1：requirements.txt
+streamlit
+yfinance
+pandas
+numpy
+plotly
+requests
+pytz
