@@ -1,19 +1,19 @@
-# 文件 5：app.py
-# 作用：主界面調度與視覺化看盤座艙
+# 文件名：app.py
+# 作用：精簡瘦身版主界面調度文件
 import calendar
 import datetime
 from datetime import timedelta
 import os
 import pandas as pd
-import plotly.graph_objects as go
 import pytz
 import streamlit as st
 
+from chart_renderer import render_dual_chart
 from data_fetcher import fetch_raw_data_with_retry
 from futu_engine import compute_futu_13_params, simulate_trades_with_2b
 from journal_manager import CSV_FILE, append_to_journal, load_journal
 
-st.set_page_config(page_title="QQQ 2B与战区同频座舱", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="QQQ 2B與戰區同頻座艙", page_icon="🎯", layout="wide")
 
 tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 tz_ny = pytz.timezone("America/New_York")
@@ -27,71 +27,72 @@ yesterday_myt_str = yesterday_d.strftime("%Y-%m-%d")
 has_10pm_p = (now_myt.hour >= 22 or now_myt.hour < 5)
 has_8am_report = yesterday_myt_str in df_j["Date_MYT"].astype(str).values if not df_j.empty else False
 
+# 頂部狀態欄
 s1, s2, s3, s4 = st.columns(4)
-s1.success("✅ 10:00 PM 战区引擎已就绪" if has_10pm_p else "⏳ 10:00 PM 战区引擎等待中")
-s2.success(f"✅ 战报已交付 ({yesterday_myt_str})" if has_8am_report else f"⏳ 战报待更新 ({yesterday_myt_str})")
-s3.info("🎯 纪律窗口：22:00 - 24:00 (MYT) | 0.5 ATR 止损 / 1:2 TP")
+s1.success("✅ 10:00 PM 戰區引擎已就緒" if has_10pm_p else "⏳ 10:00 PM 戰區引擎等待中")
+s2.success(f"✅ 戰報已交付 ({yesterday_myt_str})" if has_8am_report else f"⏳ 戰報待更新 ({yesterday_myt_str})")
+s3.info("🎯 紀律窗口：22:00 - 24:00 (MYT) | 結構止損 / 1:2 TP")
 
 with s4:
-    if st.button("🧪 执行系统全链路测试"):
-        with st.spinner("正在自检..."):
+    if st.button("🧪 執行系統全鏈路測試"):
+        with st.spinner("正在自檢..."):
             d1, d5, errs = fetch_raw_data_with_retry(period_5m="5d")
-            if errs: st.error("异常: " + "; ".join(errs))
-            else: st.success("自检通过：接口正常。")
+            if errs: st.error("異常: " + "; ".join(errs))
+            else: st.success("自檢通過：接口正常。")
 
 st.markdown("---")
-tab1, tab2, tab3 = st.tabs(["🎯 QQQ 战区座舱 (13行富途参数复制)", "📅 QQQ 2B同频月历账本", "⚡ 昨夜 22:00-24:00 信号核验与 5M 战场 (0.5 ATR)"])
+tab1, tab2, tab3 = st.tabs(["🎯 QQQ 戰區座艙 (13行富途參數複製)", "📅 QQQ 2B同頻月曆賬本", "⚡ 昨夜 22:00-24:00 信號核驗與 5M 戰場"])
 
 with tab1:
-    st.subheader("🎯 QQQ 5M 战区座舱 (含 SBR/SBR2/RBS/RBS2 & 2B)")
+    st.subheader("🎯 QQQ 5M 戰區座艙 (含 SBR/SBR2/RBS/RBS2 & 2B)")
     c_t1, c_t2 = st.columns(2)
-    c_t1.info("🕒 大马时间 (MYT): " + now_myt.strftime("%Y-%m-%d %H:%M:%S"))
-    c_t2.info("🇺🇸 美东时间 (ET): " + now_ny.strftime("%Y-%m-%d %H:%M:%S"))
+    c_t1.info("🕒 大馬時間 (MYT): " + now_myt.strftime("%Y-%m-%d %H:%M:%S"))
+    c_t2.info("🇺🇸 美東時間 (ET): " + now_ny.strftime("%Y-%m-%d %H:%M:%S"))
 
     if not has_10pm_p:
-        st.warning("🔒 处于日间准备期。大马时间 22:00 准时解锁并生成今晚 13 行战区代码。")
+        st.warning("🔒 處於日間準備期。大馬時間 22:00 準時解鎖並生成今晚 13 行戰區代碼。")
     else:
-        if st.button("🔄 刷新最新点位"): st.cache_data.clear(); st.rerun()
+        if st.button("🔄 刷新最新點位"): st.cache_data.clear(); st.rerun()
         d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
         if d1h is not None:
             p = compute_futu_13_params(d1h, d5m, now_ny)
             if p:
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric("🎯 QQQ 现价", f"${p['live_price']:.2f}")
-                m2.metric("🚦 三灯信号定调", p["BIAS_DESC"])
-                m3.metric("📈 1H EMA20 均线", f"${p['EMA20_1H']:.2f}")
-                m4.metric("📊 1H ATR 波动", f"${p['ATR_1H']:.2f}")
+                m1.metric("🎯 QQQ 現價", f"${p['live_price']:.2f}")
+                m2.metric("🚦 三燈信號定調", p["BIAS_DESC"])
+                m3.metric("📈 1H EMA20 均線", f"${p['EMA20_1H']:.2f}")
+                m4.metric("📊 1H ATR 波動", f"${p['ATR_1H']:.2f}")
 
                 out_lines = [
-                    f"TREND_BIAS := {p['TREND_BIAS']};       {{ 1. QQQ三灯判定: 1=绿灯做多, -1=红灯做空, 0=黄灯防守 }}",
+                    f"TREND_BIAS := {p['TREND_BIAS']};       {{ 1. QQQ三燈判定: 1=綠燈做多, -1=紅燈做空, 0=黃燈防守 }}",
                     "",
-                    "{ --- 第一梯队主战区 (PRIMARY ZONES) --- }",
-                    f"SBR_TOP := {round(p['SBR_TOP'], 2)}; {{ 2. PRIMARY 1H 阻力顶沿 [{p['SBR_TIME']}] }}",
+                    "{ --- 第一梯隊主戰區 (PRIMARY ZONES) --- }",
+                    f"SBR_TOP := {round(p['SBR_TOP'], 2)}; {{ 2. PRIMARY 1H 阻力頂沿 [{p['SBR_TIME']}] }}",
                     f"SBR_BOT := {round(p['SBR_BOT'], 2)}; {{ 3. PRIMARY 1H 阻力底沿 [{p['SBR_TIME']}] }}",
-                    f"RBS_TOP := {round(p['RBS_TOP'], 2)}; {{ 4. PRIMARY 1H 支撑顶沿 [{p['RBS_TIME']}] }}",
-                    f"RBS_BOT := {round(p['RBS_BOT'], 2)}; {{ 5. PRIMARY 1H 支撑底沿 [{p['RBS_TIME']}] }}",
+                    f"RBS_TOP := {round(p['RBS_TOP'], 2)}; {{ 4. PRIMARY 1H 支撐頂沿 [{p['RBS_TIME']}] }}",
+                    f"RBS_BOT := {round(p['RBS_BOT'], 2)}; {{ 5. PRIMARY 1H 支撐底沿 [{p['RBS_TIME']}] }}",
                     "",
-                    "{ --- 第二梯队拓展战区 (SECONDARY ZONES) --- }",
-                    f"SBR2_TOP := {round(p['SBR2_TOP'], 2)}; {{ 6. SECONDARY 1H 更高阻力顶沿 [{p['SBR2_TIME']}] }}",
+                    "{ --- 第二梯隊拓展戰區 (SECONDARY ZONES) --- }",
+                    f"SBR2_TOP := {round(p['SBR2_TOP'], 2)}; {{ 6. SECONDARY 1H 更高阻力頂沿 [{p['SBR2_TIME']}] }}",
                     f"SBR2_BOT := {round(p['SBR2_BOT'], 2)}; {{ 7. SECONDARY 1H 更高阻力底沿 [{p['SBR2_TIME']}] }}",
-                    f"RBS2_TOP := {round(p['RBS2_TOP'], 2)}; {{ 8. SECONDARY 1H 更低支撑顶沿 [{p['RBS2_TIME']}] }}",
-                    f"RBS2_BOT := {round(p['RBS2_BOT'], 2)}; {{ 9. SECONDARY 1H 更低支撑底沿 [{p['RBS2_TIME']}] }}",
+                    f"RBS2_TOP := {round(p['RBS2_TOP'], 2)}; {{ 8. SECONDARY 1H 更低支撐頂沿 [{p['RBS2_TIME']}] }}",
+                    f"RBS2_BOT := {round(p['RBS2_BOT'], 2)}; {{ 9. SECONDARY 1H 更低支撐底沿 [{p['RBS2_TIME']}] }}",
                     "",
-                    "{ --- 全市场客观极值 (SWEEP ANCHORS) --- }",
-                    f"PDH_LINE := {round(p['PDH'], 2)}; {{ 10. 昨日最高价 PDH [{p['PDH_TIME']}] }}",
-                    f"PDL_LINE := {round(p['PDL'], 2)}; {{ 11. 昨日最低价 PDL [{p['PDL_TIME']}] }}",
-                    f"PMH_LINE := {round(p['PMH'], 2)}; {{ 12. 盘前最高价 PMH [{p['PMH_TIME']}] }}",
-                    f"PML_LINE := {round(p['PML'], 2)}; {{ 13. 盘前最低价 PML [{p['PML_TIME']}] }}"
+                    "{ --- 全市場客觀極值 (SWEEP ANCHORS) --- }",
+                    f"PDH_LINE := {round(p['PDH'], 2)}; {{ 10. 昨日最高價 PDH [{p['PDH_TIME']}] }}",
+                    f"PDL_LINE := {round(p['PDL'], 2)}; {{ 11. 昨日最低價 PDL [{p['PDL_TIME']}] }}",
+                    f"PMH_LINE := {round(p['PMH'], 2)}; {{ 12. 盤前最高價 PMH [{p['PMH_TIME']}] }}",
+                    f"PML_LINE := {round(p['PML'], 2)}; {{ 13. 盤前最低價 PML [{p['PML_TIME']}] }}"
                 ]
-                st.markdown("#### 📋 复制到富途指标顶部 13 行代码 (点右上角复制):")
+                st.markdown("#### 📋 複製到富途指標頂部 13 行代碼 (點右上角複製):")
                 st.code("\n".join(out_lines), language="pascal")
 
 with tab2:
-    st.subheader("📅 QQQ 2B 同频月历账本 (22:00 - 24:00 MYT)")
+    st.subheader("📅 QQQ 2B 同頻月曆賬本 (22:00 - 24:00 MYT)")
     col_btn1, col_btn2, col_btn3 = st.columns([1.5, 2, 1.5])
     with col_btn1:
-        if st.button("🛠️ 结算昨夜 22:00-24:00 账本"):
-            with st.spinner("正在结算..."):
+        if st.button("🛠️ 結算昨夜 22:00-24:00 賬本"):
+            with st.spinner("正在結算..."):
                 d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
                 target_d = now_myt.date() - timedelta(days=1)
                 dt_10pm_myt = tz_myt.localize(datetime.datetime.combine(target_d, datetime.time(22, 0, 0)))
@@ -104,8 +105,8 @@ with tab2:
                     if ok: st.success(msg); st.rerun()
                     else: st.warning(msg)
     with col_btn2:
-        if st.button("⚡ 一键回溯补录当月所有历史交易日 (Backfill)"):
-            with st.spinner("正在回溯运算..."):
+        if st.button("⚡ 一鍵回溯補錄當月所有歷史交易日 (Backfill)"):
+            with st.spinner("正在回溯運算..."):
                 d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="1mo")
                 if d1h is not None and d5m is not None:
                     dates_in_5m = sorted(list(set(d5m.index.date)))
@@ -120,11 +121,11 @@ with tab2:
                             trades_day, _ = simulate_trades_with_2b(d5m, p_day, cutoff_ny, window_end_ny)
                             ok, _ = append_to_journal(d.strftime("%Y-%m-%d"), p_day, trades_day)
                             if ok: added_cnt += 1
-                    st.success(f"🎉 回溯完成，新增 {added_cnt} 个交易日记录！")
+                    st.success(f"🎉 回溯完成，新增 {added_cnt} 個交易日記錄！")
                     st.rerun()
     with col_btn3:
-        if st.button("🗑️ 清空历史账本重新生成"):
-            if os.path.exists(CSV_FILE): os.remove(CSV_FILE); st.success("账本已重置！"); st.rerun()
+        if st.button("🗑️ 清空歷史賬本重新生成"):
+            if os.path.exists(CSV_FILE): os.remove(CSV_FILE); st.success("賬本已重置！"); st.rerun()
 
     df_journal = load_journal()
     if not df_journal.empty and "Date_MYT" in df_journal.columns:
@@ -148,15 +149,15 @@ with tab2:
     with cdl:
         csv_bytes = df_m.to_csv(index=False).encode("utf-8-sig") if not df_m.empty else "".encode("utf-8-sig")
         st.download_button(
-            label=f"📥 导出 {sel_y}年{sel_m}月 完整账本 (.csv)",
+            label=f"📥 導出 {sel_y}年{sel_m}月 完整賬本 (.csv)",
             data=csv_bytes, file_name=f"Futu_Full_Journal_{sel_y}_{str(sel_m).zfill(2)}.csv", mime="text/csv", disabled=df_m.empty
         )
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("🗓️ 选定月份", f"{sel_y} 年 {sel_m} 月")
-    k2.metric("💰 窗口盈亏", f"{tot_pts:+.2f} pt")
-    k3.metric("🎯 窗口胜率", f"{w_rate:.1f}%", f"{w_cnt}/{tot_cnt} 胜")
-    k4.metric("📊 开仓总笔数", f"{tot_cnt} 笔")
+    k1.metric("🗓️ 選定月份", f"{sel_y} 年 {sel_m} 月")
+    k2.metric("💰 窗口盈虧", f"{tot_pts:+.2f} pt")
+    k3.metric("🎯 窗口勝率", f"{w_rate:.1f}%", f"{w_cnt}/{tot_cnt} 勝")
+    k4.metric("📊 開倉總筆數", f"{tot_cnt} 筆")
 
     st.markdown("---")
     weekdays = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
@@ -172,35 +173,58 @@ with tab2:
                 cur_d = datetime.date(sel_y, sel_m, day)
                 is_weekend = (d_idx >= 5)
                 if is_weekend:
-                    st.markdown(f"<div style='background-color:#edf2f7; border-radius:8px; padding:8px; height:120px; border:1px dashed #cbd5e0; text-align:center;'><div style='font-size:13px; color:#a0aec0; text-align:left;'><b>{day}</b></div><div style='font-size:18px; margin-top:10px;'>❌</div><div style='font-size:11px; color:#a0aec0;'>周末休市</div></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#edf2f7; border-radius:8px; padding:8px; height:120px; border:1px dashed #cbd5e0; text-align:center;'><div style='font-size:13px; color:#a0aec0; text-align:left;'><b>{day}</b></div><div style='font-size:18px; margin-top:10px;'>❌</div><div style='font-size:11px; color:#a0aec0;'>週末休市</div></div>", unsafe_allow_html=True)
                 else:
                     d_recs = df_m[df_m["Date_MYT_dt"] == cur_d] if not df_m.empty else pd.DataFrame()
                     if not d_recs.empty:
                         r_t = d_recs[d_recs["Signal"] != "NO_TRADE"]
                         cnt = len(r_t); pts = r_t["PnL_Points"].sum() if not r_t.empty else 0.0
                         b_val = d_recs.iloc[0].get("TREND_BIAS", 0)
-                        b_str = "多" if b_val == 1 else ("空" if b_val == -1 else "黄灯")
+                        b_str = "多" if b_val == 1 else ("空" if b_val == -1 else "黃燈")
                         if cnt == 0:
-                            st.markdown(f"<div style='background-color:#f7fafc; border-radius:8px; padding:8px; height:120px; border:1px solid #e2e8f0; text-align:center;'><div style='font-size:13px; color:#718096; text-align:left;'><b>{day}</b> <span style='font-size:10px; color:#a0aec0;'>({b_str})</span></div><div style='font-size:12px; color:#718096; margin-top:15px;'>⚪ 未触及战区</div><div style='font-size:10px; color:#a0aec0;'>空仓休战</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='background-color:#f7fafc; border-radius:8px; padding:8px; height:120px; border:1px solid #e2e8f0; text-align:center;'><div style='font-size:13px; color:#718096; text-align:left;'><b>{day}</b> <span style='font-size:10px; color:#a0aec0;'>({b_str})</span></div><div style='font-size:12px; color:#718096; margin-top:15px;'>⚪ 未觸及戰區</div><div style='font-size:10px; color:#a0aec0;'>空倉休戰</div></div>", unsafe_allow_html=True)
                         else:
                             bg = "#e6fffa" if pts >= 0 else "#fff5f5"
                             bd = "#38b2ac" if pts >= 0 else "#e53e3e"
                             tc = "#234e52" if pts >= 0 else "#742a2a"
                             sgn = "+" if pts > 0 else ""
-                            st.markdown(f"<div style='background-color:{bg}; border-radius:8px; padding:8px; height:120px; border:2px solid {bd}; text-align:center;'><div style='font-size:13px; color:{tc}; text-align:left;'><b>{day}</b> <span style='font-size:10px; color:{bd};'>({b_str})</span></div><div style='font-size:15px; font-weight:bold; color:{bd}; margin-top:2px;'>{sgn}{pts:.2f} pt</div><div style='font-size:11px; color:{tc};'>{cnt} 笔交易 (22-24点)</div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div style='background-color:{bg}; border-radius:8px; padding:8px; height:120px; border:2px solid {bd}; text-align:center;'><div style='font-size:13px; color:{tc}; text-align:left;'><b>{day}</b> <span style='font-size:10px; color:{bd};'>({b_str})</span></div><div style='font-size:15px; font-weight:bold; color:{bd}; margin-top:2px;'>{sgn}{pts:.2f} pt</div><div style='font-size:11px; color:{tc};'>{cnt} 筆交易 (22-24點)</div></div>", unsafe_allow_html=True)
                     else:
                         st.markdown(f"<div style='background-color:#ffffff; border-radius:8px; padding:8px; height:120px; border:1px solid #edf2f7; text-align:center;'><div style='font-size:13px; color:#cbd5e0; text-align:left;'><b>{day}</b></div><div style='font-size:11px; color:#cbd5e0; margin-top:25px;'>-</div></div>", unsafe_allow_html=True)
 
-    with st.expander("🔍 展开查看完整明细表 (Full Data Table)"):
+    with st.expander("🔍 展開查看完整明細表 (Full Data Table)"):
         if not df_m.empty: st.dataframe(df_m.drop(columns=["Date_MYT_dt", "Year", "Month"], errors="ignore"), use_container_width=True)
-        else: st.info("当月暂无交易明细。")
+        else: st.info("當月暫無交易明細。")
+
+    st.markdown("---")
+    st.subheader("🔍 歷史單日 5M 戰場與 VPA 量能深度回放")
+    if not df_m.empty:
+        recorded_dates = sorted(list(set(df_m["Date_MYT"].astype(str).values)), reverse=True)
+        sel_hist_date_str = st.selectbox("請選擇要回放復盤的交易日", options=recorded_dates)
+        
+        if st.button("🎬 開始回放選定日期走勢"):
+            with st.spinner("正在加載歷史數據並繪製圖表..."):
+                d1h_hist, d5m_hist, _ = fetch_raw_data_with_retry(period_5m="1mo")
+                if d1h_hist is not None and d5m_hist is not None:
+                    target_hist_d = datetime.datetime.strptime(sel_hist_date_str, "%Y-%m-%d").date()
+                    dt_hist_10pm_myt = tz_myt.localize(datetime.datetime.combine(target_hist_d, datetime.time(22, 0, 0)))
+                    cutoff_hist_ny = dt_hist_10pm_myt.astimezone(tz_ny)
+                    window_hist_end_ny = cutoff_hist_ny + timedelta(hours=2)
+                    
+                    p_hist = compute_futu_13_params(d1h_hist, d5m_hist, cutoff_hist_ny)
+                    trades_hist, day_5m_hist = simulate_trades_with_2b(d5m_hist, p_hist, cutoff_hist_ny, window_hist_end_ny)
+                    
+                    render_dual_chart(
+                        day_5m_hist, p_hist, trades_hist, dt_hist_10pm_myt,
+                        title_text=f"歷史回放 ({sel_hist_date_str}) | 5M 戰場執行與 VPA 量能異動"
+                    )
 
 with tab3:
-    st.subheader(f"⚡ 昨夜 ({yesterday_myt_str}) 22:00 - 24:00 信号核验与 5M 战场")
+    st.subheader(f"⚡ 昨夜 ({yesterday_myt_str}) 22:00 - 24:00 信號核驗與 5M 戰場")
     
     col_t3_btn, _ = st.columns([1.5, 3])
     with col_t3_btn:
-        if st.button("🔄 重新核验昨夜执行信号"):
+        if st.button("🔄 重新核驗昨夜執行信號"):
             st.cache_data.clear()
             st.rerun()
 
@@ -217,176 +241,34 @@ with tab3:
             trades, day_5m = simulate_trades_with_2b(d5m, p, cutoff_ny, window_end_ny)
             
             tc1, tc2, tc3, tc4 = st.columns(4)
-            tc1.metric("🚦 昨夜三灯方向", p["BIAS_DESC"])
-            tc2.metric("📈 1H EMA20 战区", f"${p['EMA20_1H']:.2f}")
-            tc3.metric("📊 1H ATR 基准", f"${p['ATR_1H']:.2f}")
+            tc1.metric("🚦 昨夜三燈方向", p["BIAS_DESC"])
+            tc2.metric("📈 1H EMA20 戰區", f"${p['EMA20_1H']:.2f}")
+            tc3.metric("📊 1H ATR 基準", f"${p['ATR_1H']:.2f}")
             
             if trades:
                 t = trades[0]
                 tc4.metric(
-                    "🎯 昨夜战果",
+                    "🎯 昨夜戰果",
                     f"{t['Result']} ({t['PnL_Points']:+.2f} pt)",
-                    f"信号: {t['Signal']}"
+                    f"信號: {t['Signal']}"
                 )
             else:
-                tc4.metric("🎯 昨夜战果", "⚪ 未触发信号", "空仓观望")
+                tc4.metric("🎯 昨夜戰果", "⚪ 未觸發信號", "空倉觀望")
 
-            st.markdown("#### 📋 昨夜执行明细核验 (0.5 ATR 止损 / 1:2 止盈)")
+            st.markdown("#### 📋 昨夜執行明細核驗 (結構止損 / 1:2 止盈)")
             if trades:
                 t_df = pd.DataFrame(trades)
                 show_cols = [c for c in t_df.columns if not c.endswith("_DT_NY")]
                 st.table(t_df[show_cols])
             else:
-                st.info("昨夜 22:00 - 24:00 (MYT) 价格未触及战区准入条件或未形成标准 2B / 吞没形态，按纪律未开仓。")
+                st.info("昨夜 22:00 - 24:00 (MYT) 價格未觸及戰區准入條件或未形成標準 2B / 吞沒形態，按紀律未開倉。")
 
-            st.markdown("#### 📊 5M 战场执行结构全景图 (含 CALL / PUT / 2B 信号标记)")
-            
-            dt_view_start = dt_10pm_myt - timedelta(minutes=30)
-            dt_view_end = dt_10pm_myt + timedelta(hours=2, minutes=15)
-            start_ny_view = dt_view_start.astimezone(tz_ny)
-            end_ny_view = dt_view_end.astimezone(tz_ny)
-            
-            if day_5m is not None:
-                chart_df = day_5m[(day_5m.index >= start_ny_view) & (day_5m.index <= end_ny_view)].copy()
-                
-                if not chart_df.empty:
-                    chart_df["MYT_Time"] = chart_df.index.tz_convert(tz_myt)
-                    
-                    fig = go.Figure()
-                    
-                    # 1. 5M K线
-                    fig.add_trace(go.Candlestick(
-                        x=chart_df["MYT_Time"],
-                        open=chart_df['Open'], high=chart_df['High'],
-                        low=chart_df['Low'], close=chart_df['Close'],
-                        name="5M K线"
-                    ))
-                    
-                    # 2. 均线
-                    fig.add_trace(go.Scatter(
-                        x=chart_df["MYT_Time"], y=chart_df["LWMA20"],
-                        line=dict(color="orange", width=1.2),
-                        name="LWMA 20"
-                    ))
-
-                    # 3. 扫描到的 CALL / PUT / 2B 信号点打在图上
-                    annotations = []
-
-                    # 扫描多头 2B 信号
-                    b2b_df = chart_df[chart_df["BUY_2B_SIG"] == True]
-                    for idx_row, row in b2b_df.iterrows():
-                        annotations.append(dict(
-                            x=row["MYT_Time"], y=row["Low"],
-                            xref="x", yref="y",
-                            text="▲▲ 2B 多 (CALL)",
-                            showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=2,
-                            arrowcolor="#00e676",
-                            ax=0, ay=35,
-                            font=dict(color="#00e676", size=11, family="Arial Black")
-                        ))
-
-                    # 扫描标准 CALL 多头信号 (吞没/孕线/123)
-                    bstd_df = chart_df[chart_df["BUY_STD_SIG"] == True]
-                    for idx_row, row in bstd_df.iterrows():
-                        annotations.append(dict(
-                            x=row["MYT_Time"], y=row["Low"],
-                            xref="x", yref="y",
-                            text="▲ CALL 多",
-                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
-                            arrowcolor="#69f0ae",
-                            ax=0, ay=30,
-                            font=dict(color="#69f0ae", size=10)
-                        ))
-
-                    # 扫描空头 2B 信号
-                    s2b_df = chart_df[chart_df["SELL_2B_SIG"] == True]
-                    for idx_row, row in s2b_df.iterrows():
-                        annotations.append(dict(
-                            x=row["MYT_Time"], y=row["High"],
-                            xref="x", yref="y",
-                            text="▼▼ 2B 空 (PUT)",
-                            showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=2,
-                            arrowcolor="#ff5252",
-                            ax=0, ay=-35,
-                            font=dict(color="#ff5252", size=11, family="Arial Black")
-                        ))
-
-                    # 扫描标准 PUT 空头信号
-                    sstd_df = chart_df[chart_df["SELL_STD_SIG"] == True]
-                    for idx_row, row in sstd_df.iterrows():
-                        annotations.append(dict(
-                            x=row["MYT_Time"], y=row["High"],
-                            xref="x", yref="y",
-                            text="▼ PUT 空",
-                            showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=1.5,
-                            arrowcolor="#ff8a80",
-                            ax=0, ay=-30,
-                            font=dict(color="#ff8a80", size=10)
-                        ))
-
-                    # 4. 实际成交入场与平仓标记 (带框大标)
-                    if trades:
-                        tr = trades[0]
-                        ep = tr["Entry_Price"]
-                        xp = tr["Exit_Price"]
-                        sl = tr["SL"]
-                        tp = tr["TP"]
-                        en_myt = tr["Entry_DT_NY"].astimezone(tz_myt)
-                        ex_myt = tr["Exit_DT_NY"].astimezone(tz_myt)
-
-                        # 入场大标
-                        is_buy = "多" in tr["Signal"] or "CALL" in tr["Signal"]
-                        annotations.append(dict(
-                            x=en_myt, y=ep,
-                            xref="x", yref="y",
-                            text=f"🚀 开仓入场: {ep}",
-                            showarrow=True, arrowhead=3, arrowsize=1.5, arrowwidth=2.5,
-                            arrowcolor="#ffd700",
-                            ax=0, ay=45 if is_buy else -45,
-                            bordercolor="#ffd700", borderwidth=1.5, borderpad=3,
-                            bgcolor="#1a202c",
-                            font=dict(color="#ffd700", size=11, family="Arial Black")
-                        ))
-
-                        # 离场大标
-                        annotations.append(dict(
-                            x=ex_myt, y=xp,
-                            xref="x", yref="y",
-                            text=f"🏁 平仓 ({tr['Reason']}): {xp}",
-                            showarrow=True, arrowhead=3, arrowsize=1.5, arrowwidth=2.5,
-                            arrowcolor="#ffffff",
-                            ax=0, ay=-45 if is_buy else 45,
-                            bordercolor="#ffffff", borderwidth=1.5, borderpad=3,
-                            bgcolor="#1a202c",
-                            font=dict(color="#ffffff", size=11, family="Arial Black")
-                        ))
-
-                        fig.add_hline(y=ep, line_color="#ffd700", line_width=2, annotation_text=f"进场金线: {ep}")
-                        fig.add_hline(y=sl, line_dash="dash", line_color="#ff5252", annotation_text=f"止损 (0.5 ATR): {sl}")
-                        fig.add_hline(y=tp, line_dash="dash", line_color="#00e676", annotation_text=f"目标 TP (1:2): {tp}")
-
-                    # 5. 战区线
-                    if p["SBR_BOT"] > 0:
-                        fig.add_hline(y=p["SBR_BOT"], line_dash="dash", line_color="#f56565", annotation_text=f"SBR 阻力底: {p['SBR_BOT']:.2f}")
-                    if p["RBS_TOP"] > 0:
-                        fig.add_hline(y=p["RBS_TOP"], line_dash="dash", line_color="#48bb78", annotation_text=f"RBS 支撑顶: {p['RBS_TOP']:.2f}")
-                    if p["PDH"] > 0:
-                        fig.add_hline(y=p["PDH"], line_dash="dot", line_color="#ed8936", annotation_text=f"昨日高 PDH: {p['PDH']:.2f}")
-                    if p["PDL"] > 0:
-                        fig.add_hline(y=p["PDL"], line_dash="dot", line_color="#4299e1", annotation_text=f"昨日低 PDL: {p['PDL']:.2f}")
-
-                    fig.update_layout(
-                        title="昨夜 5M 战场回放 | CALL/PUT 信号扫描与实际执行",
-                        xaxis_rangeslider_visible=False,
-                        height=560,
-                        margin=dict(l=10, r=10, t=40, b=10),
-                        template="plotly_dark",
-                        annotations=annotations
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("暂未获取到昨夜窗口期的 5M K线数据。")
+            st.markdown("#### 📊 5M 戰場執行結構全景圖 (含 CALL / PUT / 2B 與 VPA 量能異動)")
+            render_dual_chart(
+                day_5m, p, trades, dt_10pm_myt,
+                title_text="昨夜 5M 戰場回放 | 主圖買賣執行與副圖 VPA 量能異動"
+            )
         else:
-            st.error("计算昨夜 13 行战区参数失败，请检查数据完整性。")
+            st.error("計算昨夜 13 行戰區參數失敗，請檢查數據完整性。")
     else:
-        st.warning("正在获取数据，请稍后刷新。")
+        st.warning("正在獲取數據，請稍後刷新。")
