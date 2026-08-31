@@ -180,7 +180,7 @@ with tab2:
 
     cy, cm, cdl = st.columns([1, 1, 2])
     with cy: sel_y = st.selectbox("年份選擇", options=[2025, 2026, 2027], index=1)
-    with cm: sel_m = st.selectbox("月份選擇", options=list(range(1, 13)), index=now_myt.month - 1)
+    with cm: sel_m = st.selectbox("月份", options=list(range(1, 13)), index=now_myt.month - 1, key="sel_month_picker")
 
     df_m = df_journal[(df_journal["Year"] == sel_y) & (df_journal["Month"] == sel_m)] if not df_journal.empty else pd.DataFrame()
     valid_t = df_m[df_m["Signal"] != "NO_TRADE"] if not df_m.empty else pd.DataFrame()
