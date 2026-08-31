@@ -1,5 +1,5 @@
 # 文件名：app.py
-# 作用：完整版 QQQ 戰區座艙（含 3 個 Tab、主副圖 VPA 量能畫布、歷史回放與 13 行明細表）
+# 作用：完整版 QQQ 戰區座艙（Tab1 支持歷史 13 行參數查看與實時解鎖、Tab2 月曆歷史明細、Tab3 昨夜 5M/VPA 雙層圖）
 import datetime
 from datetime import timedelta
 import calendar
@@ -50,58 +50,109 @@ tab1, tab2, tab3 = st.tabs([
     "⚡ 昨夜 22:00-24:00 信號核驗與 5M 戰場"
 ])
 
-# ================= TAB 1: 戰區座艙 =================
+# ================= TAB 1: 戰區座艙 (支持查看過去 13 行參數) =================
 with tab1:
-    st.subheader("🎯 QQQ 5M 戰區座艙 (含 SBR/SBR2/RBS/RBS2 & 2B)")
+    st.subheader("🎯 QQQ 5M 戰區座艙 (13 行富途代碼)")
     c_t1, c_t2 = st.columns(2)
     c_t1.info("🕒 大馬時間 (MYT): " + now_myt.strftime("%Y-%m-%d %H:%M:%S"))
     c_t2.info("🇺🇸 美東時間 (ET): " + now_ny.strftime("%Y-%m-%d %H:%M:%S"))
 
-    if not has_10pm_p:
-        st.warning("🔒 處於日間準備期。大馬時間 22:00 準時解鎖並生成今晚 13 行戰區代碼。")
-    else:
-        if st.button("🔄 刷新最新點位"): 
-            st.cache_data.clear()
-            st.rerun()
-        d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
-        if d1h is not None:
-            p = compute_futu_13_params(d1h, d5m, now_ny)
-            if p:
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("🎯 QQQ 現價", f"${p['live_price']:.2f}")
-                m2.metric("🚦 三燈信號定調", p["BIAS_DESC"])
-                m3.metric("📈 1H EMA20 均線", f"${p['EMA20_1H']:.2f}")
-                m4.metric("📊 1H ATR 波動", f"${p['ATR_1H']:.2f}")
+    df_journal_all = load_journal()
+    recorded_dates = sorted(list(set(df_journal_all["Date_MYT"].dropna().astype(str).values)), reverse=True) if not df_journal_all.empty else []
 
-                out_lines = [
-                    f"TREND_BIAS := {p['TREND_BIAS']};       {{ 1. QQQ三燈判定: 1=綠燈做多, -1=紅燈做空, 0=黃燈防守 }}",
-                    "",
-                    "{ --- 第一梯隊主戰區 (PRIMARY ZONES) --- }",
-                    f"SBR_TOP := {round(p['SBR_TOP'], 2)}; {{ 2. PRIMARY 1H 阻力頂沿 [{p['SBR_TIME']}] }}",
-                    f"SBR_BOT := {round(p['SBR_BOT'], 2)}; {{ 3. PRIMARY 1H 阻力底沿 [{p['SBR_TIME']}] }}",
-                    f"RBS_TOP := {round(p['RBS_TOP'], 2)}; {{ 4. PRIMARY 1H 支撐頂沿 [{p['RBS_TIME']}] }}",
-                    f"RBS_BOT := {round(p['RBS_BOT'], 2)}; {{ 5. PRIMARY 1H 支撐底沿 [{p['RBS_TIME']}] }}",
-                    "",
-                    "{ --- 第二梯隊拓展戰區 (SECONDARY ZONES) --- }",
-                    f"SBR2_TOP := {round(p['SBR2_TOP'], 2)}; {{ 6. SECONDARY 1H 更高阻力頂沿 [{p['SBR2_TIME']}] }}",
-                    f"SBR2_BOT := {round(p['SBR2_BOT'], 2)}; {{ 7. SECONDARY 1H 更高阻力底沿 [{p['SBR2_TIME']}] }}",
-                    f"RBS2_TOP := {round(p['RBS2_TOP'], 2)}; {{ 8. SECONDARY 1H 更低支撐頂沿 [{p['RBS2_TIME']}] }}",
-                    f"RBS2_BOT := {round(p['RBS2_BOT'], 2)}; {{ 9. SECONDARY 1H 更低支撐底沿 [{p['RBS2_TIME']}] }}",
-                    "",
-                    "{ --- 全市場客觀極值 (SWEEP ANCHORS) --- }",
-                    f"PDH_LINE := {round(p['PDH'], 2)}; {{ 10. 昨日最高價 PDH [{p['PDH_TIME']}] }}",
-                    f"PDL_LINE := {round(p['PDL'], 2)}; {{ 11. 昨日最低價 PDL [{p['PDL_TIME']}] }}",
-                    f"PMH_LINE := {round(p['PMH'], 2)}; {{ 12. 盤前最高價 PMH [{p['PMH_TIME']}] }}",
-                    f"PML_LINE := {round(p['PML'], 2)}; {{ 13. 盤前最低價 PML [{p['PML_TIME']}] }}"
-                ]
-                st.markdown("#### 📋 複製到富途指標頂部 13 行代碼 (點右上角複製):")
-                st.code("\n".join(out_lines), language="pascal")
+    mode_options = ["🔴 實時/當前最新戰區"] + ([f"📅 歷史戰區: {d}" for d in recorded_dates] if recorded_dates else [])
+    sel_mode = st.selectbox("請選擇要查看的戰區點位版本（支持查看歷史過去 13 行參數）:", options=mode_options, key="tab1_mode_picker")
+
+    p_to_display = None
+    display_title = ""
+
+    if sel_mode.startswith("📅 歷史戰區:"):
+        target_hist_date = sel_mode.replace("📅 歷史戰區: ", "").strip()
+        hist_row = df_journal_all[df_journal_all["Date_MYT"].astype(str) == target_hist_date].iloc[0]
+        
+        p_to_display = {
+            "live_price": float(hist_row.get("Entry_Price", hist_row.get("PDH", 0.0))),
+            "TREND_BIAS": int(hist_row.get("TREND_BIAS", 0)),
+            "BIAS_DESC": "🟢 綠燈 (做多為主)" if hist_row.get("TREND_BIAS", 0) == 1 else ("🔴 紅燈 (做空為主)" if hist_row.get("TREND_BIAS", 0) == -1 else "🟡 黃燈 (震盪防守)"),
+            "EMA20_1H": float(hist_row.get("EMA20_1H", 0.0)),
+            "ATR_1H": float(hist_row.get("ATR_1H", 0.0)),
+            "SBR_TOP": float(hist_row.get("SBR_TOP", 0.0)), "SBR_BOT": float(hist_row.get("SBR_BOT", 0.0)), "SBR_TIME": f"{target_hist_date} 戰區",
+            "RBS_TOP": float(hist_row.get("RBS_TOP", 0.0)), "RBS_BOT": float(hist_row.get("RBS_BOT", 0.0)), "RBS_TIME": f"{target_hist_date} 戰區",
+            "SBR2_TOP": float(hist_row.get("SBR2_TOP", 0.0)), "SBR2_BOT": float(hist_row.get("SBR2_BOT", 0.0)), "SBR2_TIME": "Tier-2 High",
+            "RBS2_TOP": float(hist_row.get("RBS2_TOP", 0.0)), "RBS2_BOT": float(hist_row.get("RBS2_BOT", 0.0)), "RBS2_TIME": "Tier-2 Low",
+            "PDH": float(hist_row.get("PDH", 0.0)), "PDH_TIME": "PDH",
+            "PDL": float(hist_row.get("PDL", 0.0)), "PDL_TIME": "PDL",
+            "PMH": float(hist_row.get("PMH", 0.0)), "PMH_TIME": "PMH",
+            "PML": float(hist_row.get("PML", 0.0)), "PML_TIME": "PML"
+        }
+        display_title = f"📋 歷史記錄 [{target_hist_date}] 13 行富途代碼 (可直接複製):"
+    else:
+        # 實時最新模式
+        if not has_10pm_p:
+            st.warning("🔒 當前處於日間準備期（夜間 22:00 解鎖實時更新）。下方已自動切換為最近一次歷史交易日的 13 行參數供您查看。")
+            if recorded_dates:
+                latest_d = recorded_dates[0]
+                hist_row = df_journal_all[df_journal_all["Date_MYT"].astype(str) == latest_d].iloc[0]
+                p_to_display = {
+                    "live_price": float(hist_row.get("PDH", 0.0)),
+                    "TREND_BIAS": int(hist_row.get("TREND_BIAS", 0)),
+                    "BIAS_DESC": "🟢 綠燈 (做多為主)" if hist_row.get("TREND_BIAS", 0) == 1 else ("🔴 紅燈 (做空為主)" if hist_row.get("TREND_BIAS", 0) == -1 else "🟡 黃燈 (震盪防守)"),
+                    "EMA20_1H": float(hist_row.get("EMA20_1H", 0.0)),
+                    "ATR_1H": float(hist_row.get("ATR_1H", 0.0)),
+                    "SBR_TOP": float(hist_row.get("SBR_TOP", 0.0)), "SBR_BOT": float(hist_row.get("SBR_BOT", 0.0)), "SBR_TIME": f"{latest_d} 戰區",
+                    "RBS_TOP": float(hist_row.get("RBS_TOP", 0.0)), "RBS_BOT": float(hist_row.get("RBS_BOT", 0.0)), "RBS_TIME": f"{latest_d} 戰區",
+                    "SBR2_TOP": float(hist_row.get("SBR2_TOP", 0.0)), "SBR2_BOT": float(hist_row.get("SBR2_BOT", 0.0)), "SBR2_TIME": "Tier-2 High",
+                    "RBS2_TOP": float(hist_row.get("RBS2_TOP", 0.0)), "RBS2_BOT": float(hist_row.get("RBS2_BOT", 0.0)), "RBS2_TIME": "Tier-2 Low",
+                    "PDH": float(hist_row.get("PDH", 0.0)), "PDH_TIME": "PDH",
+                    "PDL": float(hist_row.get("PDL", 0.0)), "PDL_TIME": "PDL",
+                    "PMH": float(hist_row.get("PMH", 0.0)), "PMH_TIME": "PMH",
+                    "PML": float(hist_row.get("PML", 0.0)), "PML_TIME": "PML"
+                }
+                display_title = f"📋 最近交易日 [{latest_d}] 13 行富途代碼 (可直接複製):"
+        else:
+            if st.button("🔄 刷新最新點位"): 
+                st.cache_data.clear()
+                st.rerun()
+            d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
+            if d1h is not None:
+                p_to_display = compute_futu_13_params(d1h, d5m, now_ny)
+                display_title = "📋 今晚實時 13 行富途代碼 (點右上角複製):"
+
+    if p_to_display:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("🎯 參考點位", f"${p_to_display['live_price']:.2f}")
+        m2.metric("🚦 三燈判定", p_to_display["BIAS_DESC"])
+        m3.metric("📈 1H EMA20 均線", f"${p_to_display['EMA20_1H']:.2f}")
+        m4.metric("📊 1H ATR 波動", f"${p_to_display['ATR_1H']:.2f}")
+
+        out_lines = [
+            f"TREND_BIAS := {p_to_display['TREND_BIAS']};       {{ 1. QQQ三灯判定: 1=绿灯做多, -1=红灯做空, 0=黄灯防守 }}",
+            "",
+            "{ --- 第一梯队主战区 (PRIMARY ZONES) --- }",
+            f"SBR_TOP := {round(p_to_display['SBR_TOP'], 2)}; {{ 2. PRIMARY 1H 阻力顶沿 [{p_to_display['SBR_TIME']}] }}",
+            f"SBR_BOT := {round(p_to_display['SBR_BOT'], 2)}; {{ 3. PRIMARY 1H 阻力底沿 [{p_to_display['SBR_TIME']}] }}",
+            f"RBS_TOP := {round(p_to_display['RBS_TOP'], 2)}; {{ 4. PRIMARY 1H 支撑顶沿 [{p_to_display['RBS_TIME']}] }}",
+            f"RBS_BOT := {round(p_to_display['RBS_BOT'], 2)}; {{ 5. PRIMARY 1H 支撑底沿 [{p_to_display['RBS_TIME']}] }}",
+            "",
+            "{ --- 第二梯队拓展战区 (SECONDARY ZONES) --- }",
+            f"SBR2_TOP := {round(p_to_display['SBR2_TOP'], 2)}; {{ 6. SECONDARY 1H 更高阻力顶沿 [{p_to_display['SBR2_TIME']}] }}",
+            f"SBR2_BOT := {round(p_to_display['SBR2_BOT'], 2)}; {{ 7. SECONDARY 1H 更高阻力底沿 [{p_to_display['SBR2_TIME']}] }}",
+            f"RBS2_TOP := {round(p_to_display['RBS2_TOP'], 2)}; {{ 8. SECONDARY 1H 更低支撑顶沿 [{p_to_display['RBS2_TIME']}] }}",
+            f"RBS2_BOT := {round(p_to_display['RBS2_BOT'], 2)}; {{ 9. SECONDARY 1H 更低支撑底沿 [{p_to_display['RBS2_TIME']}] }}",
+            "",
+            "{ --- 全市场客观极值 (SWEEP ANCHORS) --- }",
+            f"PDH_LINE := {round(p_to_display['PDH'], 2)}; {{ 10. 昨日最高价 PDH [{p_to_display['PDH_TIME']}] }}",
+            f"PDL_LINE := {round(p_to_display['PDL'], 2)}; {{ 11. 昨日最低价 PDL [{p_to_display['PDL_TIME']}] }}",
+            f"PMH_LINE := {round(p_to_display['PMH'], 2)}; {{ 12. 盘前最高价 PMH [{p_to_display['PMH_TIME']}] }}",
+            f"PML_LINE := {round(p_to_display['PML'], 2)}; {{ 13. 盘前最低价 PML [{p_to_display['PML_TIME']}] }}"
+        ]
+        st.markdown(f"#### {display_title}")
+        st.code("\n".join(out_lines), language="pascal")
 
 # ================= TAB 2: 月曆賬本與歷史回放 =================
 with tab2:
     st.subheader("📅 QQQ 2B 同頻月曆賬本 (22:00 - 24:00 MYT)")
     
-    # 頂部選擇年月
     c_y, c_m, c_exp = st.columns([1, 1, 2])
     with c_y:
         sel_y = st.selectbox("年份選擇", [2026, 2025, 2024], index=0, key="sel_y_picker")
@@ -162,7 +213,6 @@ with tab2:
 
     st.markdown("---")
 
-    # 讀取並過濾所選月份
     df_journal = load_journal()
     if not df_journal.empty and "Date_MYT" in df_journal.columns:
         df_journal["DT_OBJ"] = pd.to_datetime(df_journal["Date_MYT"])
@@ -182,7 +232,6 @@ with tab2:
             csv_data = df_month.to_csv(index=False, encoding="utf-8-sig")
             st.download_button(f"📥 導出 {sel_y}年{sel_m}月 完整賬本 (.csv)", csv_data, f"journal_{sel_y}_{sel_m:02d}.csv", "text/csv")
 
-    # 4 大戰績指標
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("🗓️ 統計月份", f"{sel_y} 年 {sel_m} 月")
     k2.metric("💰 窗口淨盈虧", f"{net_pnl:+.2f} pt", f"{'正向收益' if net_pnl >= 0 else '回撤虧損'}")
@@ -191,7 +240,6 @@ with tab2:
 
     st.markdown("---")
 
-    # 繪製月曆
     cal = calendar.monthcalendar(sel_y, sel_m)
     cols_header = st.columns(7)
     days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
@@ -240,8 +288,8 @@ with tab2:
     st.markdown("---")
     st.subheader("🔍 歷史單日 5M 戰場與 VPA 量能深度回放")
     if not df_month.empty:
-        recorded_dates = sorted(list(set(df_month["Date_MYT"].astype(str).values)), reverse=True)
-        sel_hist_date_str = st.selectbox("請選擇要回放復盤的交易日", options=recorded_dates, key="hist_chart_picker")
+        recorded_dates_tab2 = sorted(list(set(df_month["Date_MYT"].astype(str).values)), reverse=True)
+        sel_hist_date_str = st.selectbox("請選擇要回放復盤的交易日", options=recorded_dates_tab2, key="hist_chart_picker")
         
         if st.button("🎬 開始回放選定日期走勢與量能圖"):
             with st.spinner("正在加載歷史數據並繪製雙層畫布..."):
