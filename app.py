@@ -1,7 +1,5 @@
 # 文件名：app.py
-# 作用：極簡雙標籤 QQQ 戰區座艙（去冗餘、秒響應、深色自適應）
-# 文件名：app.py
-# 作用：極簡雙標籤 QQQ 戰區座艙（徹底修復月份切換、100% 綁定選定月份與 Bias=0 鎖死）
+# 作用：極簡雙標籤 QQQ 戰區座艙（含月份動態綁定、Bias=0 鎖死與 13 行戰區參數完整歷史明細表）
 import datetime
 from datetime import timedelta
 import calendar
@@ -32,12 +30,11 @@ with tab1:
 with tab2:
     st.subheader("📅 QQQ 2B 同频月历账本 (22:00 - 24:00 MYT)")
     
-    # 1. 顶部年月选择器 (放在最上方，确保按钮与视图严格共享选择的年月)
+    # 1. 顶部年月选择器
     c_y, c_m, c_exp = st.columns([1, 1, 2])
     with c_y:
         sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker")
     with c_m:
-        # 默认选中当前月，但只要切换月份，全页面立刻切换
         sel_m = st.selectbox("月份选择", list(range(1, 13)), index=now_myt.month - 1, key="sel_m_picker")
 
     st.markdown("---")
@@ -64,13 +61,11 @@ with tab2:
                         st.warning(msg)
 
     with col_btn2:
-        # 严格回溯当前选中的 sel_y 与 sel_m
         if st.button(f"⚡ 一键回溯/刷新 {sel_y}年{sel_m}月 历史账本"):
             with st.spinner(f"正在重新回溯计算 {sel_y} 年 {sel_m} 月数据..."):
                 d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="1mo")
                 if d1h is not None and d5m is not None:
                     dates_in_5m = sorted(list(set(d5m.index.date)))
-                    # 仅筛选出属于当前选定年月的交易日
                     target_dates = [d for d in dates_in_5m if d.year == sel_y and d.month == sel_m and d < now_ny.date()]
                     
                     added_cnt = 0
@@ -97,7 +92,7 @@ with tab2:
 
     st.markdown("---")
 
-    # 2. 读取数据并严格按照 sel_y 与 sel_m 进行过滤
+    # 2. 严格按用户选中的 sel_y 和 sel_m 过滤账本
     df_journal = load_journal()
     if not df_journal.empty and "Date_MYT" in df_journal.columns:
         df_journal["DT_OBJ"] = pd.to_datetime(df_journal["Date_MYT"])
@@ -117,7 +112,7 @@ with tab2:
             csv_data = df_month.to_csv(index=False, encoding="utf-8-sig")
             st.download_button(f"📥 导出 {sel_y}年{sel_m}月 完整账本 (.csv)", csv_data, f"journal_{sel_y}_{sel_m:02d}.csv", "text/csv")
 
-    # 3. 四大统计卡片严格显示选中的年月
+    # 3. 四大战绩卡片
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("🗓️ 统计月份", f"{sel_y} 年 {sel_m} 月")
     k2.metric("💰 窗口净盈亏", f"{net_pnl:+.2f} pt", f"{'正向收益' if net_pnl >= 0 else '回撤亏损'}")
@@ -126,7 +121,7 @@ with tab2:
 
     st.markdown("---")
 
-    # 4. 根据用户选中的 sel_y, sel_m 绘制当月的真实日历网格
+    # 4. 渲染当月日历
     cal = calendar.monthcalendar(sel_y, sel_m)
     cols_header = st.columns(7)
     days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
@@ -161,3 +156,12 @@ with tab2:
                             st.markdown(f"<div style='border:1px solid #48bb78; border-radius:6px; padding:6px; height:95px; background-color:{bg_c};'><span style='color:#e2e8f0; font-size:11px;'>{day_num} ({bias_tag})</span><br><span style='color:#fff; font-size:13px; font-weight:bold;'>{pnl:+.2f} pt</span><br><span style='color:#cbd5e0; font-size:10px;'>1 笔交易</span></div>", unsafe_allow_html=True)
                     else:
                         st.markdown(f"<div style='border:1px dashed #2d3748; border-radius:6px; padding:8px; height:95px; text-align:center;'><span style='color:#4a5568; font-size:12px;'>{day_num}</span><br><span style='color:#4a5568; font-size:11px;'>-</span></div>", unsafe_allow_html=True)
+
+    # 5. 🔍 完整还原：整月 13 个战区参数与交易明细表
+    st.markdown("---")
+    with st.expander("🔍 展开查看完整明细表 (Full Data Table - 含13行战区参数与执行详情)", expanded=True):
+        if not df_month.empty:
+            display_df = df_month.drop(columns=["DT_OBJ"], errors="ignore").sort_values(by="Date_MYT", ascending=False)
+            st.dataframe(display_df, use_container_width=True)
+        else:
+            st.info(f"{sel_y} 年 {sel_m} 月暂无历史账本数据，请点击上方「一键回溯」生成。")
