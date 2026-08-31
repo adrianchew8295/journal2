@@ -1,5 +1,5 @@
 # 文件名：futu_engine.py
-# 作用：富途 13 行参数抽取与 100% 对齐富途指标的 5M 回测引擎
+# 作用：富途 13 行参数抽取与 100% 对齐富途指标的 5M 回测引擎 (含 Bias=0 锁死与 CALL/PUT 保留)
 import datetime
 from datetime import timedelta
 import numpy as np
@@ -102,7 +102,7 @@ def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
 
 def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
     """
-    100% 对齐富途指标逻辑的 5M 回测引擎 (结构止损 / 1:2 止盈)
+    100% 对齐富途牛牛麦语言指标的 5M 回测引擎 (支持 2B + CALL/PUT, Bias 0 严格锁死不开仓)
     """
     trades = []
     try:
@@ -161,10 +161,11 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         buy_std_confirmed = std_buy_setup.shift(1) & (day_5m["High"] > day_5m["High"].shift(1)) & (day_5m["Close"] > day_5m["Open"]) & (day_5m["Close"] > day_5m["LWMA20"]) & vol_heavy_or_ref1
         sell_std_confirmed = std_sell_setup.shift(1) & (day_5m["Low"] < day_5m["Low"].shift(1)) & (day_5m["Close"] < day_5m["Open"]) & (day_5m["Close"] < day_5m["LWMA20"]) & vol_heavy_or_ref1
 
-        day_5m["BUY_2B_SIG"] = (bias >= 0) & buy_2b_confirmed & (buy_2b_confirmed.rolling(5).sum() == 1)
-        day_5m["SELL_2B_SIG"] = (bias <= 0) & sell_2b_confirmed & (sell_2b_confirmed.rolling(5).sum() == 1)
-        day_5m["BUY_STD_SIG"] = (bias >= 0) & buy_std_confirmed & (buy_std_confirmed.rolling(5).sum() == 1) & (~day_5m["BUY_2B_SIG"])
-        day_5m["SELL_STD_SIG"] = (bias <= 0) & sell_std_confirmed & (sell_std_confirmed.rolling(5).sum() == 1) & (~day_5m["SELL_2B_SIG"])
+        # 门禁：严格使用 > 0 与 < 0（对齐指标，bias==0 时全为 False，锁死不开仓）
+        day_5m["BUY_2B_SIG"] = (bias > 0) & buy_2b_confirmed & (buy_2b_confirmed.rolling(5).sum() == 1)
+        day_5m["SELL_2B_SIG"] = (bias < 0) & sell_2b_confirmed & (sell_2b_confirmed.rolling(5).sum() == 1)
+        day_5m["BUY_STD_SIG"] = (bias > 0) & buy_std_confirmed & (buy_std_confirmed.rolling(5).sum() == 1) & (~day_5m["BUY_2B_SIG"])
+        day_5m["SELL_STD_SIG"] = (bias < 0) & sell_std_confirmed & (sell_std_confirmed.rolling(5).sum() == 1) & (~day_5m["SELL_2B_SIG"])
 
         in_pos, pos_type = False, 0
         entry_p, sl_p, tp_p = 0.0, 0.0, 0.0
@@ -218,7 +219,7 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
                 is_bstd = bool(day_5m["BUY_STD_SIG"].iloc[i])
                 is_sstd = bool(day_5m["SELL_STD_SIG"].iloc[i])
 
-                # 100% 对齐富途牛牛公式的结构止损与 1:2 止盈
+                # 100% 对齐富途指标的结构止损与 1:2 止盈
                 if is_b2b or is_bstd:
                     in_pos, pos_type = True, 1
                     entry_p = c
