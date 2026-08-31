@@ -1,5 +1,5 @@
 # 文件名：futu_engine.py
-# 作用：富途 13 行参数抽取与 100% 对齐富途指标的 5M 回测引擎 (含 Bias=0 锁死与 CALL/PUT 保留)
+# 作用：富途 13 行参数抽取与 100% 对齐指标的 5M 回测引擎 (仅限 22:00-24:00 窗口内，支持窗口内多次交易)
 import datetime
 from datetime import timedelta
 import numpy as np
@@ -102,7 +102,10 @@ def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
 
 def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
     """
-    100% 对齐富途牛牛麦语言指标的 5M 回测引擎 (支持 2B + CALL/PUT, Bias 0 严格锁死不开仓)
+    100% 对齐富途指标：
+    1. 严格只在 22:00 - 24:00 MYT (美东 10:00 - 12:00) 窗口内开仓
+    2. 窗口期内平仓后，若再出信号允许继续交易（不限制只做 1 笔）
+    3. 24:00 强制清仓离场
     """
     trades = []
     try:
@@ -161,7 +164,7 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         buy_std_confirmed = std_buy_setup.shift(1) & (day_5m["High"] > day_5m["High"].shift(1)) & (day_5m["Close"] > day_5m["Open"]) & (day_5m["Close"] > day_5m["LWMA20"]) & vol_heavy_or_ref1
         sell_std_confirmed = std_sell_setup.shift(1) & (day_5m["Low"] < day_5m["Low"].shift(1)) & (day_5m["Close"] < day_5m["Open"]) & (day_5m["Close"] < day_5m["LWMA20"]) & vol_heavy_or_ref1
 
-        # 门禁：严格使用 > 0 与 < 0（对齐指标，bias==0 时全为 False，锁死不开仓）
+        # 门禁：严格 > 0 与 < 0 (Bias=0 严格锁死)
         day_5m["BUY_2B_SIG"] = (bias > 0) & buy_2b_confirmed & (buy_2b_confirmed.rolling(5).sum() == 1)
         day_5m["SELL_2B_SIG"] = (bias < 0) & sell_2b_confirmed & (sell_2b_confirmed.rolling(5).sum() == 1)
         day_5m["BUY_STD_SIG"] = (bias > 0) & buy_std_confirmed & (buy_std_confirmed.rolling(5).sum() == 1) & (~day_5m["BUY_2B_SIG"])
@@ -170,7 +173,6 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         in_pos, pos_type = False, 0
         entry_p, sl_p, tp_p = 0.0, 0.0, 0.0
         entry_time_ny = None
-        daily_trade_count = 0
         futu_signal_tag = ""
 
         start_idx = 0
@@ -179,12 +181,14 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
                 start_idx = idx_i
                 break
 
+        # 遍历 22:00 - 24:00 (MYT) 窗口内的每一根 K 线
         for i in range(start_idx, len(day_5m)):
             cur_t_ny = day_5m.index[i]
             c, h, l = day_5m["Close"].iloc[i], day_5m["High"].iloc[i], day_5m["Low"].iloc[i]
             atr_v = day_5m["ATR14"].iloc[i] if not np.isnan(day_5m["ATR14"].iloc[i]) else 0.8
             is_window_close = (cur_t_ny >= window_end_ny - timedelta(minutes=5))
 
+            # 持仓中的平仓监控
             if in_pos:
                 exit_flag, reason, exit_p = False, "", 0.0
                 exit_time_ny = cur_t_ny
@@ -209,17 +213,15 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
                         "Reason": reason, "Result": "盈利" if pnl > 0 else ("保本" if pnl == 0 else "亏损"),
                         "Entry_DT_NY": entry_time_ny, "Exit_DT_NY": exit_time_ny
                     })
-                    in_pos = False
-                    daily_trade_count += 1
-                    break
+                    in_pos = False  # 平仓，重置为空仓状态
 
-            if not in_pos and daily_trade_count == 0 and cur_t_ny < (window_end_ny - timedelta(minutes=15)):
+            # 空仓时开仓监控：只要当前处于 22:00 - 23:45 窗口内，出信号就开仓 (支持多次交易)
+            if not in_pos and cur_t_ny < (window_end_ny - timedelta(minutes=15)):
                 is_b2b = bool(day_5m["BUY_2B_SIG"].iloc[i])
                 is_s2b = bool(day_5m["SELL_2B_SIG"].iloc[i])
                 is_bstd = bool(day_5m["BUY_STD_SIG"].iloc[i])
                 is_sstd = bool(day_5m["SELL_STD_SIG"].iloc[i])
 
-                # 100% 对齐富途指标的结构止损与 1:2 止盈
                 if is_b2b or is_bstd:
                     in_pos, pos_type = True, 1
                     entry_p = c
