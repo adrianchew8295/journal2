@@ -1,5 +1,5 @@
 # 文件名：app.py
-# 作用：完整版 QQQ 戰區座艙（Tab1 支持歷史 13 行參數查看與實時解鎖、Tab2 月曆歷史明細、Tab3 昨夜 5M/VPA 雙層圖）
+# 作用：全新專業暗黑質感 QQQ 戰區與 2B 同頻座艙（極致視覺 + 絲滑交互）
 import datetime
 from datetime import timedelta
 import calendar
@@ -14,7 +14,105 @@ from futu_engine import compute_futu_13_params, simulate_trades_with_2b
 from journal_manager import load_journal, append_to_journal
 from chart_renderer import render_dual_chart
 
-st.set_page_config(page_title="QQQ 2B與戰區同頻座艙", layout="wide", page_icon="🎯")
+st.set_page_config(
+    page_title="QQQ 2B 與戰區同頻座艙",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# 注入自定義現代專業暗黑質感 CSS
+st.markdown("""
+<style>
+    /* 全局背景與字體 */
+    .stApp {
+        background-color: #0b0e14;
+        color: #c9d1d9;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    
+    /* 頂部標題 */
+    .main-title {
+        font-size: 1.8rem;
+        font-weight: 800;
+        background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+    }
+
+    /* 玻璃擬態卡片 */
+    .cockpit-card {
+        background: rgba(22, 27, 34, 0.75);
+        border: 1px solid rgba(48, 54, 61, 0.8);
+        border-radius: 10px;
+        padding: 14px 16px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .cockpit-card:hover {
+        border-color: #58a6ff;
+        transform: translateY(-2px);
+    }
+    
+    /* 核心指標卡 */
+    div[data-testid="stMetric"] {
+        background: rgba(22, 27, 34, 0.85);
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        padding: 12px 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.5px;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.85rem !important;
+        color: #8b949e !important;
+    }
+    
+    /* 現代化按鈕樣式 */
+    .stButton>button {
+        width: 100%;
+        border-radius: 8px;
+        font-weight: 600;
+        border: 1px solid #30363d;
+        background: #21262d;
+        color: #e6edf3;
+        padding: 8px 16px;
+        transition: all 0.2s ease-in-out;
+    }
+    .stButton>button:hover {
+        border-color: #38bdf8;
+        background: #1f2937;
+        color: #38bdf8;
+        box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+    }
+    
+    /* 標籤頁樣式 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        border-bottom: 1px solid #21262d;
+        padding-bottom: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 6px 6px 0 0;
+        padding: 8px 18px;
+        background-color: transparent;
+        border: none;
+        color: #8b949e;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(56, 189, 248, 0.1) !important;
+        color: #38bdf8 !important;
+        border-bottom: 2px solid #38bdf8 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 tz_ny = pytz.timezone("America/New_York")
@@ -27,41 +125,32 @@ yesterday_myt_str = yesterday_d.strftime("%Y-%m-%d")
 has_10pm_p = (now_myt.hour >= 22 or now_myt.hour < 5)
 has_8am_report = yesterday_myt_str in df_j["Date_MYT"].astype(str).values if not df_j.empty else False
 
-st.title("🎯 QQQ 戰區與 2B 同頻座艙")
+st.markdown('<div class="main-title">🎯 QQQ 戰區與 2B 同頻座艙</div>', unsafe_allow_html=True)
 
-# 頂部狀態欄
+# 頂部狀態導航卡片欄
 s1, s2, s3, s4 = st.columns(4)
-s1.success("✅ 10:00 PM 戰區引擎已就緒" if has_10pm_p else "⏳ 10:00 PM 戰區引擎等待中")
-s2.success(f"✅ 昨夜戰報已交付 ({yesterday_myt_str})" if has_8am_report else f"⏳ 昨夜戰報待更新 ({yesterday_myt_str})")
-s3.info("🎯 紀律窗口：22:00 - 24:00 (MYT) | 1:2 TP / 結構止損")
+s1.metric("🕒 大馬時間 (MYT)", now_myt.strftime("%H:%M:%S"), now_myt.strftime("%Y-%m-%d"))
+s2.metric("🇺🇸 美東時間 (ET)", now_ny.strftime("%H:%M:%S"), "盤中紀律" if has_10pm_p else "日間備戰")
+s3.metric("🚦 戰區引擎狀態", "✅ 已就緒" if has_10pm_p else "⏳ 等待 22:00", "22:00 - 24:00 窗口")
+s4.metric("📋 昨夜戰報交付", "✅ 已存檔" if has_8am_report else "⏳ 待更新", f"{yesterday_myt_str}")
 
-with s4:
-    if st.button("🧪 執行系統全鏈路自檢"):
-        with st.spinner("正在自檢..."):
-            d1, d5, errs = fetch_raw_data_with_retry(period_5m="5d")
-            if errs: st.error("異常: " + "; ".join(errs))
-            else: st.success("自檢通過：行情接口正常。")
-
-st.markdown("---")
+st.markdown("<div style='margin-top: -8px; margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs([
     "🎯 戰區座艙 (13行富途代碼)", 
-    "📅 QQQ 2B同頻月曆與歷史回放", 
-    "⚡ 昨夜 22:00-24:00 信號核驗與 5M 戰場"
+    "📅 同頻月曆與歷史復盤", 
+    "⚡ 昨夜 5M 戰場與 VPA 量能"
 ])
 
-# ================= TAB 1: 戰區座艙 (支持查看過去 13 行參數) =================
+# ================= TAB 1: 戰區座艙 =================
 with tab1:
     st.subheader("🎯 QQQ 5M 戰區座艙 (13 行富途代碼)")
-    c_t1, c_t2 = st.columns(2)
-    c_t1.info("🕒 大馬時間 (MYT): " + now_myt.strftime("%Y-%m-%d %H:%M:%S"))
-    c_t2.info("🇺🇸 美東時間 (ET): " + now_ny.strftime("%Y-%m-%d %H:%M:%S"))
-
+    
     df_journal_all = load_journal()
     recorded_dates = sorted(list(set(df_journal_all["Date_MYT"].dropna().astype(str).values)), reverse=True) if not df_journal_all.empty else []
 
-    mode_options = ["🔴 實時/當前最新戰區"] + ([f"📅 歷史戰區: {d}" for d in recorded_dates] if recorded_dates else [])
-    sel_mode = st.selectbox("請選擇要查看的戰區點位版本（支持查看歷史過去 13 行參數）:", options=mode_options, key="tab1_mode_picker")
+    mode_options = ["🔴 實時 / 當前最新戰區"] + ([f"📅 歷史戰區: {d}" for d in recorded_dates] if recorded_dates else [])
+    sel_mode = st.selectbox("請選擇戰區版本（支援白天調閱過去 13 行參數）:", options=mode_options, key="tab1_mode_picker")
 
     p_to_display = None
     display_title = ""
@@ -85,11 +174,10 @@ with tab1:
             "PMH": float(hist_row.get("PMH", 0.0)), "PMH_TIME": "PMH",
             "PML": float(hist_row.get("PML", 0.0)), "PML_TIME": "PML"
         }
-        display_title = f"📋 歷史記錄 [{target_hist_date}] 13 行富途代碼 (可直接複製):"
+        display_title = f"📋 歷史存檔 [{target_hist_date}] 13 行富途代碼 (可直接複製):"
     else:
-        # 實時最新模式
         if not has_10pm_p:
-            st.warning("🔒 當前處於日間準備期（夜間 22:00 解鎖實時更新）。下方已自動切換為最近一次歷史交易日的 13 行參數供您查看。")
+            st.info("🔒 當前處於日間準備期（夜間 22:00 解鎖實時更新）。下方已自動切換為最近一次歷史交易日的 13 行參數。")
             if recorded_dates:
                 latest_d = recorded_dates[0]
                 hist_row = df_journal_all[df_journal_all["Date_MYT"].astype(str) == latest_d].iloc[0]
@@ -159,7 +247,7 @@ with tab2:
     with c_m:
         sel_m = st.selectbox("月份選擇", list(range(1, 13)), index=now_myt.month - 1, key="sel_m_picker")
 
-    st.markdown("---")
+    st.markdown("<div style='margin-top: 4px; margin-bottom: 12px;'></div>", unsafe_allow_html=True)
 
     col_btn1, col_btn2, col_btn3 = st.columns([1.5, 2, 1.5])
     with col_btn1:
@@ -232,19 +320,21 @@ with tab2:
             csv_data = df_month.to_csv(index=False, encoding="utf-8-sig")
             st.download_button(f"📥 導出 {sel_y}年{sel_m}月 完整賬本 (.csv)", csv_data, f"journal_{sel_y}_{sel_m:02d}.csv", "text/csv")
 
+    # 4 大戰績卡片
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("🗓️ 統計月份", f"{sel_y} 年 {sel_m} 月")
-    k2.metric("💰 窗口淨盈虧", f"{net_pnl:+.2f} pt", f"{'正向收益' if net_pnl >= 0 else '回撤虧損'}")
+    k2.metric("💰 窗口淨盈虧", f"{net_pnl:+.2f} pt", f"{'正向收益' if net_pnl >= 0 else '回撤控制中'}")
     k3.metric("🎯 實操勝率", f"{win_rate:.1f}%", f"↑ {win_trades} 勝 / {total_trades} 戰")
     k4.metric("📊 總出手次數", f"{total_trades} 筆", f"↑ 空倉 {empty_days} 天")
 
-    st.markdown("---")
+    st.markdown("<div style='margin-top: 12px;'></div>", unsafe_allow_html=True)
 
+    # 繪製月曆
     cal = calendar.monthcalendar(sel_y, sel_m)
     cols_header = st.columns(7)
     days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
     for idx, d_name in enumerate(days_name):
-        cols_header[idx].markdown(f"**{d_name}**")
+        cols_header[idx].markdown(f"<div style='text-align:center; color:#8b949e; font-size:12px; font-weight:700;'>{d_name}</div>", unsafe_allow_html=True)
 
     day_records = {}
     if not df_month.empty:
@@ -257,23 +347,50 @@ with tab2:
         for d_idx, day_num in enumerate(week):
             with w_cols[d_idx]:
                 if day_num == 0:
-                    st.markdown("<div style='height:95px;'></div>", unsafe_allow_html=True)
+                    st.markdown("<div style='height:100px;'></div>", unsafe_allow_html=True)
                 elif d_idx in [5, 6]:
-                    st.markdown(f"<div style='border:1px solid #2d3748; border-radius:6px; padding:8px; height:95px; background-color:#141824; text-align:center;'><span style='color:#718096; font-size:12px;'>{day_num}</span><br><span style='color:#4a5568; font-size:12px;'>💤<br>週末休市</span></div>", unsafe_allow_html=True)
+                    st.markdown(f"""
+                    <div style='background:rgba(22,27,34,0.4); border:1px dashed #30363d; border-radius:8px; padding:8px; height:100px; text-align:center;'>
+                        <div style='font-size:11px; color:#484f58; text-align:left; font-weight:bold;'>{day_num}</div>
+                        <div style='font-size:16px; margin-top:8px;'>💤</div>
+                        <div style='font-size:10px; color:#484f58;'>週末休市</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                 else:
                     if day_num in day_records:
                         rec = day_records[day_num]
                         pnl = float(rec["PnL_Points"])
                         bias_v = rec["TREND_BIAS"]
                         bias_tag = "多" if bias_v > 0 else ("空" if bias_v < 0 else "震盪")
+                        bias_color = "#38bdf8" if bias_v > 0 else ("#f87171" if bias_v < 0 else "#fbbf24")
                         
                         if rec["Signal"] == "NO_TRADE":
-                            st.markdown(f"<div style='border:1px solid #2d3748; border-radius:6px; padding:6px; height:95px; background-color:#1a202c;'><span style='color:#a0aec0; font-size:11px;'>{day_num} ({bias_tag})</span><br><br><span style='color:#e2e8f0; font-size:12px;'>⚪ 未達門檻</span><br><span style='color:#718096; font-size:10px;'>紀律空倉</span></div>", unsafe_allow_html=True)
+                            st.markdown(f"""
+                            <div style='background:rgba(22,27,34,0.9); border:1px solid #30363d; border-radius:8px; padding:8px; height:100px;'>
+                                <div style='font-size:11px; color:#8b949e;'><b>{day_num}</b> <span style='color:{bias_color}; font-size:10px;'>({bias_tag})</span></div>
+                                <div style='font-size:12px; color:#8b949e; margin-top:14px; text-align:center;'>⚪ 未達門檻</div>
+                                <div style='font-size:10px; color:#484f58; text-align:center;'>紀律空倉</div>
+                            </div>
+                            """, unsafe_allow_html=True)
                         else:
-                            bg_c = "#064e3b" if pnl > 0 else "#7f1d1d"
-                            st.markdown(f"<div style='border:1px solid #48bb78; border-radius:6px; padding:6px; height:95px; background-color:{bg_c};'><span style='color:#e2e8f0; font-size:11px;'>{day_num} ({bias_tag})</span><br><span style='color:#fff; font-size:13px; font-weight:bold;'>{pnl:+.2f} pt</span><br><span style='color:#cbd5e0; font-size:10px;'>1 筆交易</span></div>", unsafe_allow_html=True)
+                            bg_c = "rgba(6, 78, 59, 0.65)" if pnl > 0 else "rgba(127, 29, 29, 0.65)"
+                            bd_c = "#10b981" if pnl > 0 else "#ef4444"
+                            txt_c = "#34d399" if pnl > 0 else "#f87171"
+                            sgn = "+" if pnl > 0 else ""
+                            st.markdown(f"""
+                            <div style='background:{bg_c}; border:1.5px solid {bd_c}; border-radius:8px; padding:8px; height:100px;'>
+                                <div style='font-size:11px; color:#e6edf3;'><b>{day_num}</b> <span style='color:{bias_color}; font-size:10px;'>({bias_tag})</span></div>
+                                <div style='font-size:14px; font-weight:800; color:{txt_c}; text-align:center; margin-top:4px;'>{sgn}{pnl:.2f} pt</div>
+                                <div style='font-size:10px; color:#94a3b8; text-align:center;'>1 筆交易</div>
+                            </div>
+                            """, unsafe_allow_html=True)
                     else:
-                        st.markdown(f"<div style='border:1px dashed #2d3748; border-radius:6px; padding:8px; height:95px; text-align:center;'><span style='color:#4a5568; font-size:12px;'>{day_num}</span><br><span style='color:#4a5568; font-size:11px;'>-</span></div>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style='background:rgba(13,17,23,0.6); border:1px solid #21262d; border-radius:8px; padding:8px; height:100px; text-align:center;'>
+                            <div style='font-size:11px; color:#30363d; text-align:left; font-weight:bold;'>{day_num}</div>
+                            <div style='font-size:11px; color:#30363d; margin-top:22px;'>-</div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
     # 13 行戰區參數完整歷史明細表
     st.markdown("---")
