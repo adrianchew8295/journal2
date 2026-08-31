@@ -113,27 +113,40 @@ with tab1:
             st.code("\n".join(out_lines), language="pascal")
 
 with tab2:
-    st.subheader("📅 紀律月曆賬本與深度復盤")
-    btn_c1, btn_c2, btn_c3 = st.columns([1.5, 2, 1.5])
-    with btn_c1:
-        if st.button("🛠️ 結算昨夜戰報"):
-            with st.spinner("正在核算..."):
+    st.subheader("📅 QQQ 2B 同频月历账本 (22:00 - 24:00 MYT)")
+    col_btn1, col_btn2, col_btn3 = st.columns([1.5, 2, 1.5])
+    
+    with col_btn1:
+        # 12点（24:00）一过即可立刻结算昨夜
+        if st.button("🛠️ 结算昨夜 22:00-24:00 账本"):
+            with st.spinner("正在结算昨夜交易..."):
                 d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
-                target_d = now_myt.date() - timedelta(days=1)
+                # 如果当前时间是午夜 00:00 之后，结算的就是昨天晚上的 22:00-24:00
+                target_d = now_myt.date() - timedelta(days=1) if now_myt.hour < 22 else now_myt.date()
                 dt_10pm_myt = tz_myt.localize(datetime.datetime.combine(target_d, datetime.time(22, 0, 0)))
                 cutoff_ny = dt_10pm_myt.astimezone(tz_ny)
                 window_end_ny = cutoff_ny + timedelta(hours=2)
+                
                 p = compute_futu_13_params(d1h, d5m, cutoff_ny)
                 if p:
                     trades, _ = simulate_trades_with_2b(d5m, p, cutoff_ny, window_end_ny)
-                    ok, msg = append_to_journal(target_d.strftime("%Y-%m-%d"), p, trades)
-                    if ok: st.success(msg); st.rerun()
-                    else: st.warning(msg)
-    with btn_c2:
-        if st.button("⚡ 一鍵回溯當月所有交易日"):
-            with st.spinner("正在深度回溯..."):
+                    ok, msg = append_to_journal(target_d.strftime("%Y-%m-%d"), p, trades, overwrite=True)
+                    if ok:
+                        st.success(f"🎉 {target_d} 结算完成！")
+                        st.rerun()
+                    else:
+                        st.warning(msg)
+
+    with col_btn2:
+        # 一键强制全量重算当月，自动覆盖旧记录
+        if st.button("⚡ 一键回溯/刷新当月所有交易日 (Force Backfill)"):
+            with st.spinner("正在用最新严格风控规则重新回溯整月..."):
                 d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="1mo")
                 if d1h is not None and d5m is not None:
+                    # 重新计算前先清空旧账本，彻底消除旧数据
+                    if os.path.exists(CSV_FILE):
+                        os.remove(CSV_FILE)
+                    
                     dates_in_5m = sorted(list(set(d5m.index.date)))
                     added_cnt = 0
                     for d in dates_in_5m:
@@ -141,17 +154,22 @@ with tab2:
                         dt_10pm_myt = tz_myt.localize(datetime.datetime.combine(d, datetime.time(22, 0, 0)))
                         cutoff_ny = dt_10pm_myt.astimezone(tz_ny)
                         window_end_ny = cutoff_ny + timedelta(hours=2)
+                        
                         p_day = compute_futu_13_params(d1h, d5m, cutoff_ny)
                         if p_day:
                             trades_day, _ = simulate_trades_with_2b(d5m, p_day, cutoff_ny, window_end_ny)
                             ok, _ = append_to_journal(d.strftime("%Y-%m-%d"), p_day, trades_day)
                             if ok: added_cnt += 1
-                    st.success(f"🎉 回溯完成，已同步 {added_cnt} 個交易日！")
+                    
+                    st.success(f"🎉 整月回溯与数据刷新完成，共重新生成 {added_cnt} 个交易日！")
                     st.rerun()
-    with btn_c3:
-        if st.button("🗑️ 重置並清空歷史賬本"):
-            if os.path.exists(CSV_FILE): os.remove(CSV_FILE); st.success("賬本已重置！"); st.rerun()
 
+    with col_btn3:
+        if st.button("🗑️ 清空历史账本重新生成"):
+            if os.path.exists(CSV_FILE):
+                os.remove(CSV_FILE)
+                st.success("账本已清空！")
+                st.rerun()
     df_journal = load_journal()
     if not df_journal.empty and "Date_MYT" in df_journal.columns:
         df_journal["Date_MYT_dt"] = pd.to_datetime(df_journal["Date_MYT"]).dt.date
