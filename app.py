@@ -1,5 +1,7 @@
 # 文件名：app.py
 # 作用：極簡雙標籤 QQQ 戰區座艙（去冗餘、秒響應、深色自適應）
+# 文件名：app.py
+# 作用：極簡雙標籤 QQQ 戰區座艙（徹底修復月份切換、100% 綁定選定月份與 Bias=0 鎖死）
 import datetime
 from datetime import timedelta
 import calendar
@@ -29,6 +31,17 @@ with tab1:
 
 with tab2:
     st.subheader("📅 QQQ 2B 同频月历账本 (22:00 - 24:00 MYT)")
+    
+    # 1. 顶部年月选择器 (放在最上方，确保按钮与视图严格共享选择的年月)
+    c_y, c_m, c_exp = st.columns([1, 1, 2])
+    with c_y:
+        sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker")
+    with c_m:
+        # 默认选中当前月，但只要切换月份，全页面立刻切换
+        sel_m = st.selectbox("月份选择", list(range(1, 13)), index=now_myt.month - 1, key="sel_m_picker")
+
+    st.markdown("---")
+
     col_btn1, col_btn2, col_btn3 = st.columns([1.5, 2, 1.5])
     
     with col_btn1:
@@ -51,17 +64,17 @@ with tab2:
                         st.warning(msg)
 
     with col_btn2:
-        if st.button("⚡ 一键回溯/刷新当月所有交易日 (Force Backfill)"):
-            with st.spinner("正在用最新严格风控规则重新回溯整月..."):
+        # 严格回溯当前选中的 sel_y 与 sel_m
+        if st.button(f"⚡ 一键回溯/刷新 {sel_y}年{sel_m}月 历史账本"):
+            with st.spinner(f"正在重新回溯计算 {sel_y} 年 {sel_m} 月数据..."):
                 d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="1mo")
                 if d1h is not None and d5m is not None:
-                    if os.path.exists("monthly_trade_records.csv"):
-                        os.remove("monthly_trade_records.csv")
-                    
                     dates_in_5m = sorted(list(set(d5m.index.date)))
+                    # 仅筛选出属于当前选定年月的交易日
+                    target_dates = [d for d in dates_in_5m if d.year == sel_y and d.month == sel_m and d < now_ny.date()]
+                    
                     added_cnt = 0
-                    for d in dates_in_5m:
-                        if d >= now_ny.date(): continue
+                    for d in target_dates:
                         dt_10pm_myt = tz_myt.localize(datetime.datetime.combine(d, datetime.time(22, 0, 0)))
                         cutoff_ny = dt_10pm_myt.astimezone(tz_ny)
                         window_end_ny = cutoff_ny + timedelta(hours=2)
@@ -72,7 +85,7 @@ with tab2:
                             ok, _ = append_to_journal(d.strftime("%Y-%m-%d"), p_day, trades_day, overwrite=True)
                             if ok: added_cnt += 1
                     
-                    st.success(f"🎉 整月回溯完成，共重新生成 {added_cnt} 个交易日！")
+                    st.success(f"🎉 {sel_y}年{sel_m}月 回溯完成，共生成 {added_cnt} 个交易日记录！")
                     st.rerun()
 
     with col_btn3:
@@ -83,18 +96,9 @@ with tab2:
                 st.rerun()
 
     st.markdown("---")
-    
-    # 动态年月选择器 (严格绑定 key)
-    c_y, c_m, c_exp = st.columns([1, 1, 2])
-    with c_y:
-        sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker")
-    with c_m:
-        # 默认选中当前月，但用户切换为 8 时，后续所有计算严格使用 8
-        sel_m = st.selectbox("月份选择", list(range(1, 13)), index=now_myt.month - 1, key="sel_m_picker")
 
+    # 2. 读取数据并严格按照 sel_y 与 sel_m 进行过滤
     df_journal = load_journal()
-
-    # 核心修复：卡片与表格数据严格使用用户选中的 sel_y 和 sel_m
     if not df_journal.empty and "Date_MYT" in df_journal.columns:
         df_journal["DT_OBJ"] = pd.to_datetime(df_journal["Date_MYT"])
         df_month = df_journal[(df_journal["DT_OBJ"].dt.year == sel_y) & (df_journal["DT_OBJ"].dt.month == sel_m)].copy()
@@ -113,7 +117,7 @@ with tab2:
             csv_data = df_month.to_csv(index=False, encoding="utf-8-sig")
             st.download_button(f"📥 导出 {sel_y}年{sel_m}月 完整账本 (.csv)", csv_data, f"journal_{sel_y}_{sel_m:02d}.csv", "text/csv")
 
-    # 4 大战绩卡片显示当前选中的年月
+    # 3. 四大统计卡片严格显示选中的年月
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("🗓️ 统计月份", f"{sel_y} 年 {sel_m} 月")
     k2.metric("💰 窗口净盈亏", f"{net_pnl:+.2f} pt", f"{'正向收益' if net_pnl >= 0 else '回撤亏损'}")
@@ -122,7 +126,7 @@ with tab2:
 
     st.markdown("---")
 
-    # 根据选中的年月动态生成当月的真实日历网格
+    # 4. 根据用户选中的 sel_y, sel_m 绘制当月的真实日历网格
     cal = calendar.monthcalendar(sel_y, sel_m)
     cols_header = st.columns(7)
     days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
