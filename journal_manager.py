@@ -32,7 +32,6 @@ def append_to_journal(date_str, params, trades, overwrite=False):
     """
     df_cur = load_journal()
     
-    # 如果开启 overwrite=True，先删除当天的旧数据
     if overwrite and not df_cur.empty:
         df_cur = df_cur[df_cur["Date_MYT"].astype(str) != str(date_str)].copy()
     elif not df_cur.empty and str(date_str) in df_cur["Date_MYT"].astype(str).values:
