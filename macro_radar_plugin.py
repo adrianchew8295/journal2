@@ -1,9 +1,10 @@
 # 文件名: macro_radar_plugin.py
-# 作用: 13 标的加权宏观雷达 (SNDK 走 Tiingo API + 雅虎双通道 · 彻底清除 NaN 异常)
+# 作用: 旗舰级交互式资金轮动看板 (支持 4 象限资金轮动 + 加权双浪 + 智能白话结论)
 
 import datetime
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import pytz
 import requests
@@ -13,34 +14,29 @@ import yfinance as yf
 tz_ny = pytz.timezone("America/New_York")
 tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 
-# Tiingo 访问凭证
 TIINGO_TOKEN = "bcffe3a5cf7eeef085e405cfa4a3e5691b976217"
 
-# 13 核心标的配置 (含市值影响力权重)
+# 13 核心标的配置
 TICKERS_CONFIG = {
-    # 👑 第一梯队：核心权重定海神针 (Weight: 3.0)
-    "NVDA": {"name": "NVIDIA", "tier": "巨头", "weight": 3.0, "role": "AI算力总舵手"},
-    "AAPL": {"name": "Apple", "tier": "巨头", "weight": 3.0, "role": "消费电子/防守中枢"},
-    "MSFT": {"name": "Microsoft", "tier": "巨头", "weight": 3.0, "role": "云端权重底座"},
-    # 🏛️ 第二梯队：中枢巨头 (Weight: 2.0)
-    "AMZN": {"name": "Amazon", "tier": "巨头", "weight": 2.0, "role": "电商与云权重"},
-    "GOOGL": {"name": "Alphabet", "tier": "巨头", "weight": 2.0, "role": "搜索广告权重"},
+    "NVDA": {"name": "英伟达", "tier": "巨头", "weight": 3.0, "role": "AI算力总舵手"},
+    "AAPL": {"name": "苹果", "tier": "巨头", "weight": 3.0, "role": "消费电子/防守中枢"},
+    "MSFT": {"name": "微软", "tier": "巨头", "weight": 3.0, "role": "云端权重底座"},
+    "AMZN": {"name": "亚马逊", "tier": "巨头", "weight": 2.0, "role": "电商与云权重"},
+    "GOOGL": {"name": "谷歌", "tier": "巨头", "weight": 2.0, "role": "搜索广告权重"},
     "META": {"name": "Meta", "tier": "巨头", "weight": 2.0, "role": "社交开源生态"},
-    "TSLA": {"name": "Tesla", "tier": "巨头", "weight": 2.0, "role": "流动性先锋"},
-    "AVGO": {"name": "Broadcom", "tier": "先锋", "weight": 2.0, "role": "网络与芯片核心"},
-    # 🚀 第三梯队：情绪进攻先锋 (Weight: 1.0)
-    "MU": {"name": "Micron", "tier": "先锋", "weight": 1.0, "role": "存储/HBM龙头"},
+    "TSLA": {"name": "特斯拉", "tier": "巨头", "weight": 2.0, "role": "流动性先锋"},
+    "AVGO": {"name": "博通", "tier": "先锋", "weight": 2.0, "role": "网络与芯片核心"},
+    "MU": {"name": "美光", "tier": "先锋", "weight": 1.0, "role": "存储/HBM龙头"},
     "AMD": {"name": "AMD", "tier": "先锋", "weight": 1.0, "role": "算力二当家"},
-    "WDC": {"name": "Western Digital", "tier": "先锋", "weight": 1.0, "role": "存储与硬盘"},
-    "STX": {"name": "Seagate", "tier": "先锋", "weight": 1.0, "role": "企业级存储"},
-    "SNDK": {"name": "SanDisk", "tier": "先锋", "weight": 1.0, "role": "存储情绪标的"},
+    "WDC": {"name": "西部数据", "tier": "先锋", "weight": 1.0, "role": "存储与硬盘"},
+    "STX": {"name": "希捷", "tier": "先锋", "weight": 1.0, "role": "企业级存储"},
+    "SNDK": {"name": "闪迪", "tier": "先锋", "weight": 1.0, "role": "存储情绪标的"},
 }
 
 ALL_SYMBOLS = ["QQQ"] + list(TICKERS_CONFIG.keys())
 
 
 def fetch_from_tiingo_5m(ticker):
-    """从 Tiingo IEX 接口拉取 5M/1H 分时数据"""
     try:
         start_date = (datetime.datetime.now(tz_ny) - datetime.timedelta(days=5)).strftime("%Y-%m-%d")
         url = f"https://api.tiingo.com/iex/{ticker}/prices?startDate={start_date}&resampleFreq=5min&token={TIINGO_TOKEN}&columns=open,high,low,close,volume"
@@ -63,17 +59,9 @@ def fetch_from_tiingo_5m(ticker):
 
 @st.cache_data(ttl=180)
 def fetch_radar_data_advanced():
-    """双通道抓取：SNDK 优先 Tiingo，其余 YahooFinance + 容错兜底"""
-    data_5m = {}
-    data_daily = {}
-    data_weekly = {}
-
+    data_5m, data_daily, data_weekly = {}, {}, {}
     for sym in ALL_SYMBOLS:
-        # 1. 5M 分时抓取
-        df_5m = None
-        if sym == "SNDK":
-            df_5m = fetch_from_tiingo_5m("SNDK")
-        
+        df_5m = fetch_from_tiingo_5m("SNDK") if sym == "SNDK" else None
         if df_5m is None or df_5m.empty:
             try:
                 ticker = yf.Ticker(sym)
@@ -87,11 +75,9 @@ def fetch_radar_data_advanced():
                         df_5m = sub
             except Exception:
                 pass
-        
         if df_5m is not None and not df_5m.empty:
             data_5m[sym] = df_5m
 
-        # 2. 日线与周线抓取
         try:
             ticker = yf.Ticker(sym)
             df_1d = ticker.history(period="3mo", interval="1d")
@@ -99,16 +85,14 @@ def fetch_radar_data_advanced():
                 if isinstance(df_1d.columns, pd.MultiIndex):
                     df_1d.columns = df_1d.columns.get_level_values(0)
                 sub_1d = df_1d[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"]).copy()
-                if not sub_1d.empty:
-                    data_daily[sym] = sub_1d
+                if not sub_1d.empty: data_daily[sym] = sub_1d
 
             df_1w = ticker.history(period="6mo", interval="1wk")
             if df_1w is not None and not df_1w.empty:
                 if isinstance(df_1w.columns, pd.MultiIndex):
                     df_1w.columns = df_1w.columns.get_level_values(0)
                 sub_1w = df_1w[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"]).copy()
-                if not sub_1w.empty:
-                    data_weekly[sym] = sub_1w
+                if not sub_1w.empty: data_weekly[sym] = sub_1w
         except Exception:
             pass
 
@@ -122,7 +106,6 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
     qqq_5m = data_5m["QQQ"]
     latest_ts_ny = qqq_5m.index[-1]
     latest_date_ny = latest_ts_ny.date()
-    
     day_slice = {sym: df[df.index.date == latest_date_ny].copy() for sym, df in data_5m.items() if not df.empty}
     if "QQQ" not in day_slice or day_slice["QQQ"].empty:
         return None
@@ -135,7 +118,6 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
     qqq_chg = ((qqq_curr - qqq_base) / qqq_base) * 100
     qqq_norm = (qqq_df["Close"] / qqq_base) * 100
 
-    # ATR 消耗率
     atr_used_pct = 0.0
     atr_1d_val = 4.0
     if "QQQ" in data_daily and len(data_daily["QQQ"]) >= 14:
@@ -195,47 +177,38 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
 
                         is_near_pwl = (c_p <= pwl_val * 1.015)
                         if latest_sp >= 0.2 and vol_ratio >= 1.25:
-                            action_tag = "🟢 放量水上 (领跑突破)"
-                            structure_pos = "突破拉升区"
+                            action_tag = "🟢 放量领跑"
+                            quadrant = "真拉升龙头"
                         elif latest_sp <= -0.5 and vol_ratio >= 1.5:
-                            action_tag = "🔴 坚决离场 (放量砸盘)"
-                            structure_pos = "破位出逃区"
-                        elif is_near_pwl and vol_ratio < 0.9:
-                            action_tag = "⚠️ 触及周线支撑 (等2B扫损)"
-                            structure_pos = f"PWL周线底 (${pwl_val:.2f})"
-                        elif c_p <= d_ma50 * 1.01 and c_p >= d_ma50 * 0.99:
-                            action_tag = "⚠️ 回踩日线MA50 (观察企稳)"
-                            structure_pos = f"日MA50 (${d_ma50:.2f})"
+                            action_tag = "🔴 坚决出逃"
+                            quadrant = "放量砸盘"
+                        elif latest_sp >= 0:
+                            action_tag = "🟡 弱势护盘"
+                            quadrant = "水上震荡"
                         else:
-                            action_tag = "⚪ 缩量观望 (常态整理)"
-                            structure_pos = "中继震荡区"
+                            action_tag = "⚪ 水下跟跌"
+                            quadrant = "弱势跟跌"
 
                         facts_table.append({
                             "Ticker": sym,
                             "Name": cfg["name"],
                             "Tier": cfg["tier"],
+                            "Weight_Num": w,
                             "Weight": f"{w:.1f}x",
                             "Price": round(c_p, 2),
                             "ChangePct": round(chg, 2),
                             "SpreadVsQQQ": round(latest_sp, 2),
                             "VolumeRatio": round(vol_ratio, 2),
-                            "Structure": structure_pos,
-                            "ActionTag": action_tag
+                            "BubbleSize": max(min(vol_ratio * 18, 55), 14),
+                            "ActionTag": action_tag,
+                            "Quadrant": quadrant
                         })
 
         if not has_valid_data:
-            # 严格置零防 NaN 污染
             facts_table.append({
-                "Ticker": sym,
-                "Name": cfg["name"],
-                "Tier": cfg["tier"],
-                "Weight": f"{w:.1f}x",
-                "Price": 0.0,
-                "ChangePct": 0.0,
-                "SpreadVsQQQ": 0.0,
-                "VolumeRatio": 0.0,
-                "Structure": "数据同步中",
-                "ActionTag": "⚪ 待同步"
+                "Ticker": sym, "Name": cfg["name"], "Tier": cfg["tier"], "Weight_Num": w, "Weight": f"{w:.1f}x",
+                "Price": 0.0, "ChangePct": 0.0, "SpreadVsQQQ": 0.0, "VolumeRatio": 0.0, "BubbleSize": 12,
+                "ActionTag": "⚪ 待同步", "Quadrant": "离线"
             })
 
     t1_wave = (pd.concat(t1_series_list, axis=1).sum(axis=1) / sum(t1_weights)).dropna() if t1_series_list else pd.Series(dtype=float)
@@ -243,7 +216,6 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
 
     df_clean = pd.DataFrame(facts_table)
     df_clean["SpreadVsQQQ"] = pd.to_numeric(df_clean["SpreadVsQQQ"], errors="coerce").fillna(0.0)
-    df_clean["VolumeRatio"] = pd.to_numeric(df_clean["VolumeRatio"], errors="coerce").fillna(0.0)
 
     return {
         "timestamp_ny": latest_ts_ny.strftime("%Y-%m-%d %H:%M ET"),
@@ -260,155 +232,142 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
     }
 
 
-def generate_facts_markdown(res):
-    df = res["df_facts"]
-    t1_latest = float(res["t1_wave"].iloc[-1]) if not res["t1_wave"].empty else 0.0
-    t2_latest = float(res["t2_wave"].iloc[-1]) if not res["t2_wave"].empty else 0.0
-    atr_used = res["atr_used_pct"]
-    pct_above = (res["above_count"] / res["total_active"] * 100)
-
-    if atr_used >= 110:
-        macro_verdict = "🚨 日内波动率已透支 (ATR Used ≥ 110%) | 动能耗尽，严禁追单，建议空仓防守"
-    elif t2_latest > t1_latest and t2_latest > 0 and pct_above >= 60:
-        macro_verdict = "🟢 芯片先锋加权领涨主导真突破 (Risk-On / 多头配合度极高)"
-    elif t2_latest < 0 and t1_latest >= 0:
-        macro_verdict = "🔴 权重巨头护盘掩护芯片出货 (Risk-Off / 诱多风险，严禁追多)"
-    else:
-        macro_verdict = "⚪ 板块轮动与均线纠缠整理 (Neutral / 严格按战区防守)"
-
-    md_text = f"""# 📡 QQQ 宏观雷达与 13 核心标的事实战报 (Integrated Facts)
-
-### 1. 宏观环境与波动能耗事实
-- **截面时间**: `{res['timestamp_myt']}` (对应美东 `{res['timestamp_ny']}`)
-- **QQQ 指数状态**: 现价 `${res['qqq_curr']:.2f}` ({res['qqq_chg']:+.2f}%) | 日线 ATR: `${res['atr_1d_val']:.2f}`
-- **🔋 日内波幅消耗 (ATR Used)**: `{atr_used:.1f}%` ({'🚨 能量耗尽/防垃圾震荡' if atr_used >= 100 else '动能充沛/可执行交易'})
-- **全市场共振比**: `{res['above_count']}/{res['total_active']}` 跑赢 QQQ (`{pct_above:.1f}%`)
-- **加权双浪偏离事实**:
-  - 🏛️ 巨头防守浪 (加权中枢): `{t1_latest:+.2f}%`
-  - 🚀 芯片进攻浪 (加权中枢): `{t2_latest:+.2f}%`
-  - **大盘定调结论**: **{macro_verdict}**
-
-### 2. 13 核心标的日周结构与实操动作矩阵
-| Ticker | 阵营 | 权重 | 现价 ($) | 涨跌幅 (%) | 相对 QQQ 差值 (%) | 均量倍数 | 关键结构位置 | 落地实操动作 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-"""
-    for _, r in df.iterrows():
-        md_text += f"| **{r['Ticker']}** | {r['Tier']} | {r['Weight']} | {r['Price']} | {r['ChangePct']:+.2f}% | {r['SpreadVsQQQ']:+.2f}% | {r['VolumeRatio']}x | {r['Structure']} | {r['ActionTag']} |\n"
-
-    md_text += """
----
-### 💡 给 AI 的诊断提示词 (Prompt):
-请根据上述不可争辩的客观事实（加权双浪、ATR 消耗率、13 标的日周结构与动作标签）：
-1. 诊断今晚主力资金是真金白银进攻还是拉巨头掩护出逃；
-2. 评估今晚 22:00-24:00 (MYT) QQQ 5M 交易环境多空配合评分 (1-10分) 与操作要点。
-"""
-    return md_text
-
-
 def render_macro_radar_tab():
-    st.subheader("📡 QQQ 宏观雷达 · 13 核心标的事实穿透看板 (加权与大级别版)")
+    st.subheader("📡 13 标的资金轮动与宏观罗盘 (Interactive Visual Hub)")
 
-    if st.button("🔄 刷新最新宏观事实", key="btn_refresh_radar_final_v3"):
+    if st.button("🔄 刷新最新主力轮动事实", key="btn_refresh_radar_interactive"):
         st.cache_data.clear()
         st.rerun()
 
-    with st.spinner("正在提取 13 核心标的加权分时与日周结构数据 (含 Tiingo 数据通道)..."):
+    with st.spinner("正在提取 13 标的高频数据与资金轮动坐标..."):
         d_5m, d_1d, d_1w = fetch_radar_data_advanced()
 
     res = compute_radar_facts_integrated(d_5m, d_1d, d_1w)
     if not res:
-        st.warning("行情连接中，请稍候点击上方刷新。")
+        st.warning("行情连接中，请稍后刷新。")
         return
 
     t1_now = float(res["t1_wave"].iloc[-1]) if not res["t1_wave"].empty else 0.0
     t2_now = float(res["t2_wave"].iloc[-1]) if not res["t2_wave"].empty else 0.0
-    pct_above = (res["above_count"] / res["total_active"] * 100) if res["total_active"] > 0 else 0
     atr_used = res["atr_used_pct"]
+    above_cnt = res["above_count"]
 
-    # 1. 顶部指标卡
+    # 1. 大白话实操决策卡片（一眼看懂今晚干什么）
+    if atr_used >= 100:
+        decision_box = ("🚨 严禁追单 (空间已打满)", "#EF4444", "今日波动范围已耗尽 100% 以上，后续以垃圾震荡为主，严格空仓。")
+    elif t2_now > 0 and t2_now > t1_now and above_cnt >= 8:
+        decision_box = ("🟢 放心做多 (真突破拉升)", "#10B981", "芯片先锋真金白银带头领涨，多头配合度极高，踩战区支撑可开 CALL。")
+    elif t2_now < -0.3 and above_cnt <= 4:
+        decision_box = ("🚨 坚决不做多 (诱多/掩护出货)", "#EF4444", "芯片正在水下被大单抛售，大盘全靠 1-2 只巨头硬撑，开 CALL 必被套，只找 2B 做空！")
+    else:
+        decision_box = ("🟡 观望防守 (中性轮动)", "#F59E0B", "多空力量分化，市场处于拉锯中，严格等待战区边界与 2B 扫损确认。")
+
+    st.markdown(f"""
+    <div style='background:rgba(15,23,42,0.85); border:2px solid {decision_box[1]}; border-radius:10px; padding:12px 18px; margin-bottom:12px;'>
+        <span style='font-size:16px; font-weight:800; color:{decision_box[1]};'>{decision_box[0]}</span>
+        <span style='font-size:13px; color:#E2E8F0; margin-left:12px;'>{decision_box[2]}</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 2. 顶部指标栏
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("🎯 QQQ 基准现价", f"${res['qqq_curr']:.2f}", f"{res['qqq_chg']:+.2f}%")
-    k2.metric("🔋 日内 ATR 波幅消耗", f"{atr_used:.1f}%", "🚨 空间耗尽/防追单" if atr_used >= 100 else "动能充沛")
-    k3.metric("🏛️ 巨头防守浪 (加权)", f"{t1_now:+.2f}%", "水上跑赢" if t1_now >= 0 else "水下跑输")
-    k4.metric("🚀 芯片进攻浪 (加权)", f"{t2_now:+.2f}%", "🔥 真突破" if t2_now > t1_now and t2_now > 0 else "🚨 掩护出货")
+    k1.metric("🎯 QQQ 现价", f"${res['qqq_curr']:.2f}", f"{res['qqq_chg']:+.2f}%")
+    k2.metric("🔋 日内 ATR 能耗", f"{atr_used:.1f}%", "🚨 耗尽" if atr_used >= 100 else "动能充沛")
+    k3.metric("🏛️ 巨头防守浪 (加权)", f"{t1_now:+.2f}%", "水上护盘" if t1_now >= 0 else "水下砸盘")
+    k4.metric("🚀 芯片先锋浪 (加权)", f"{t2_now:+.2f}%", "🔥 真进攻" if t2_now > 0 else "🚨 资金出逃")
 
     st.markdown("---")
 
-    # 2. 视觉双浪 + 横向加权龙虎榜
-    col_v1, col_v2 = st.columns([1.2, 1])
+    # 3. 核心视觉区：资金轮动四象限图 (鼠标悬停即可交互)
+    col_chart1, col_chart2 = st.columns([1.5, 1])
 
-    with col_v1:
-        st.markdown("#### 🌊 主力阵营加权双浪 (0.0% = QQQ 基准)")
-        fig_wave = go.Figure()
-        fig_wave.add_hline(y=0, line_width=2.5, line_color="#FFD700", annotation_text="QQQ 基准中枢", annotation_position="top left")
+    with col_chart1:
+        st.markdown("#### 🧭 13 标的资金轮动四象限交互图 (可缩放/悬停穿透)")
+        df_plot = res["df_facts"].copy()
+        
+        # 气泡散点图
+        fig_quad = go.Figure()
 
-        if not res["t2_wave"].empty:
-            fig_wave.add_trace(go.Scatter(
-                x=res["t2_wave"].index.tz_convert(tz_myt),
-                y=res["t2_wave"].values,
-                mode="lines",
-                name="🚀 芯片先锋加权浪 (MU/NVDA/AMD等)",
-                line=dict(color="#00E5FF", width=3),
-                fill='tozeroy',
-                fillcolor='rgba(0, 229, 255, 0.08)'
+        # 添加四象限背景底色提示
+        fig_quad.add_hline(y=0, line_width=1.5, line_color="#E2E8F0", line_dash="solid")
+        fig_quad.add_vline(x=2.0, line_width=1.0, line_color="#475569", line_dash="dash")
+
+        # 区分多空颜色
+        for _, row in df_plot.iterrows():
+            c_color = "#10B981" if row["SpreadVsQQQ"] >= 0 else "#EF4444"
+            fig_quad.add_trace(go.Scatter(
+                x=[row["Weight_Num"]],
+                y=[row["SpreadVsQQQ"]],
+                mode="markers+text",
+                name=row["Ticker"],
+                text=[f"<b>{row['Ticker']}</b><br>({row['Name']})"],
+                textposition="top center",
+                textfont=dict(size=10, color="#FFFFFF", family="Consolas"),
+                marker=dict(
+                    size=[row["BubbleSize"]],
+                    color=c_color,
+                    opacity=0.85,
+                    line=dict(width=1.5, color="#FFFFFF")
+                ),
+                hovertemplate=f"<b>{row['Ticker']} ({row['Name']})</b><br>" +
+                              f"角色: {row['Tier']} (权重: {row['Weight']})<br>" +
+                              f"现价: ${row['Price']} ({row['ChangePct']:+.2f}%)<br>" +
+                              f"相对大盘差值: <b>{row['SpreadVsQQQ']:+.2f}%</b><br>" +
+                              f"成交量比: <b>{row['VolumeRatio']}x</b><br>" +
+                              f"实操动作: <b>{row['ActionTag']}</b><extra></extra>"
             ))
 
-        if not res["t1_wave"].empty:
-            fig_wave.add_trace(go.Scatter(
-                x=res["t1_wave"].index.tz_convert(tz_myt),
-                y=res["t1_wave"].values,
-                mode="lines",
-                name="🏛️ 巨头防守加权浪 (AAPL/MSFT等)",
-                line=dict(color="#FF9100", width=2.5, dash="dash")
-            ))
-
-        fig_wave.update_layout(
-            height=360,
-            margin=dict(l=5, r=5, t=10, b=5),
+        fig_quad.update_layout(
+            height=400,
+            margin=dict(l=10, r=10, t=10, b=10),
             template="plotly_dark",
-            hovermode="x unified",
-            xaxis_title="大马时间 (MYT)",
-            yaxis_title="相对加权偏离 (%)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+            paper_bgcolor="#0B0F19",
+            plot_bgcolor="#0B0F19",
+            xaxis=dict(
+                title="市场权重等级 (1.0x 轻量情绪先锋 ──► 3.0x 核心定海神针)",
+                tickvals=[1.0, 2.0, 3.0],
+                ticktext=["1.0x (小票先锋)", "2.0x (中枢巨头)", "3.0x (核心巨头)"],
+                gridcolor="#1E293B", zeroline=False
+            ),
+            yaxis=dict(
+                title="相对 QQQ 强弱差值 (%) [水上买盘 ──► 水下抛盘]",
+                gridcolor="#1E293B", zerolinecolor="#64748B"
+            ),
+            showlegend=False
         )
-        st.plotly_chart(fig_wave, use_container_width=True)
+        st.plotly_chart(fig_quad, use_container_width=True)
 
-    with col_v2:
-        st.markdown("#### 🏆 13 标的强弱龙虎榜 (带量能与权重)")
-        df_rank = res["df_facts"].sort_values(by="SpreadVsQQQ", ascending=True)
-        bar_colors = ["#00E676" if x >= 0 else "#FF5252" for x in df_rank["SpreadVsQQQ"]]
+    with col_chart2:
+        st.markdown("#### 🏆 强弱力量天平 (即时排布)")
+        df_bar = res["df_facts"].sort_values(by="SpreadVsQQQ", ascending=True)
+        bar_colors = ["#10B981" if x >= 0 else "#EF4444" for x in df_bar["SpreadVsQQQ"]]
 
         fig_bar = go.Figure()
         fig_bar.add_trace(go.Bar(
-            y=df_rank["Ticker"] + " (" + df_rank["Weight"] + ")",
-            x=df_rank["SpreadVsQQQ"],
+            y=df_bar["Ticker"] + " (" + df_bar["Name"] + ")",
+            x=df_bar["SpreadVsQQQ"],
             orientation="h",
             marker=dict(color=bar_colors),
-            text=[f"{sp:+.2f}% | {vr}x" for sp, vr in zip(df_rank["SpreadVsQQQ"], df_rank["VolumeRatio"])],
-            textposition="outside"
+            text=[f"{sp:+.2f}%" for sp in df_bar["SpreadVsQQQ"]],
+            textposition="outside",
+            hovertemplate="<b>%{y}</b><br>偏离差值: %{x:+.2f}%<extra></extra>"
         ))
-
         fig_bar.update_layout(
-            height=360,
+            height=400,
             margin=dict(l=5, r=25, t=10, b=5),
             template="plotly_dark",
-            xaxis=dict(title="相对 QQQ 差值 (%)", zeroline=True, zerolinecolor="#ffffff")
+            paper_bgcolor="#0B0F19",
+            plot_bgcolor="#0B0F19",
+            xaxis=dict(title="相对 QQQ 差值 (%)", gridcolor="#1E293B", zerolinecolor="#FFFFFF")
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
     st.markdown("---")
 
-    # 3. 13 核心标的落地点位与动作诊断表
-    st.markdown("#### 📋 13 核心标的日周结构与实操清单")
+    # 4. 13 标的客观状态清单
+    st.markdown("#### 📋 13 标的即时清单 (带大白话动作)")
     st.dataframe(
-        df_rank[["Ticker", "Tier", "Weight", "Price", "ChangePct", "SpreadVsQQQ", "VolumeRatio", "Structure", "ActionTag"]].sort_values(by="SpreadVsQQQ", ascending=False),
+        df_plot[["Ticker", "Name", "Tier", "Weight", "Price", "ChangePct", "SpreadVsQQQ", "VolumeRatio", "ActionTag"]].sort_values(by="SpreadVsQQQ", ascending=False),
         use_container_width=True,
         hide_index=True
     )
-
-    st.markdown("---")
-
-    # 4. 标准 Markdown 导出区
-    st.markdown("#### 🤖 AI 深度分析数据包 (点击右上角一键复制)")
-    ai_md = generate_facts_markdown(res)
-    st.code(ai_md, language="markdown")
