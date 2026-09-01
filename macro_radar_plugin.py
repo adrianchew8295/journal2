@@ -1,5 +1,5 @@
 # 文件名: macro_radar_plugin.py
-# 作用: 13 核心正股宏观 Watchlist 机构级看板 (无卡片/纯表格流 · 日周轮动 · AI Facts 导出)
+# 作用: 13 核心正股宏观 Watchlist 极简看板 (标的合并/纯净 6 列 · 日周轮动 · AI Facts 导出)
 
 import datetime
 import numpy as np
@@ -14,23 +14,21 @@ tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 
 TIINGO_TOKEN = "bcffe3a5cf7eeef085e405cfa4a3e5691b976217"
 
-# 13 核心标的配置 (严格锁定 7 巨头 + 6 先锋)
+# 13 核心标的配置
 TICKERS_CONFIG = {
-    # 🏛️ 7 大权重巨头
-    "NVDA": {"name": "英伟达", "camp": "巨头", "weight_desc": "👑 3.0x", "weight": 3.0, "role": "AI算力总舵手"},
-    "AAPL": {"name": "苹果", "camp": "巨头", "weight_desc": "👑 3.0x", "weight": 3.0, "role": "消费电子/防守"},
-    "MSFT": {"name": "微软", "camp": "巨头", "weight_desc": "👑 3.0x", "weight": 3.0, "role": "云端权重底座"},
-    "AMZN": {"name": "亚马逊", "camp": "巨头", "weight_desc": "🏛️ 2.0x", "weight": 2.0, "role": "电商与云权重"},
-    "GOOGL": {"name": "谷歌", "camp": "巨头", "weight_desc": "🏛️ 2.0x", "weight": 2.0, "role": "搜索广告权重"},
-    "META": {"name": "Meta", "camp": "巨头", "weight_desc": "🏛️ 2.0x", "weight": 2.0, "role": "社交开源生态"},
-    "TSLA": {"name": "特斯拉", "camp": "巨头", "weight_desc": "🏛️ 2.0x", "weight": 2.0, "role": "流动性先锋"},
-    # 🚀 6 大芯片与存储先锋
-    "AVGO": {"name": "博通", "camp": "先锋", "weight_desc": "🏛️ 2.0x", "weight": 2.0, "role": "网络芯片龙头"},
-    "MU": {"name": "美光", "camp": "先锋", "weight_desc": "🚀 1.0x", "weight": 1.0, "role": "存储/HBM龙头"},
-    "AMD": {"name": "AMD", "camp": "先锋", "weight_desc": "🚀 1.0x", "weight": 1.0, "role": "算力二当家"},
-    "WDC": {"name": "西部数据", "camp": "先锋", "weight_desc": "🚀 1.0x", "weight": 1.0, "role": "存储与硬盘"},
-    "STX": {"name": "希捷", "camp": "先锋", "weight_desc": "🚀 1.0x", "weight": 1.0, "role": "企业级存储"},
-    "SNDK": {"name": "闪迪", "camp": "先锋", "weight_desc": "🚀 1.0x", "weight": 1.0, "role": "存储情绪标的"},
+    "NVDA": {"name": "英伟达", "weight": 3.0},
+    "AAPL": {"name": "苹果", "weight": 3.0},
+    "MSFT": {"name": "微软", "weight": 3.0},
+    "AMZN": {"name": "亚马逊", "weight": 2.0},
+    "GOOGL": {"name": "谷歌", "weight": 2.0},
+    "META": {"name": "Meta", "weight": 2.0},
+    "TSLA": {"name": "特斯拉", "weight": 2.0},
+    "AVGO": {"name": "博通", "weight": 2.0},
+    "MU": {"name": "美光", "weight": 1.0},
+    "AMD": {"name": "AMD", "weight": 1.0},
+    "WDC": {"name": "西部数据", "weight": 1.0},
+    "STX": {"name": "希捷", "weight": 1.0},
+    "SNDK": {"name": "闪迪", "weight": 1.0},
 }
 
 ALL_SYMBOLS = ["QQQ"] + list(TICKERS_CONFIG.keys())
@@ -132,31 +130,26 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
             else:
                 bear_count += 1
 
-            # 严格四阶段大级别划分
+            # 4 阶段判定策略
             if c_p >= ma20 and spread_vs_qqq >= 0 and vol_ratio >= 1.0:
                 phase = "🚀 阶段2: 轮动主升"
                 action = "【加仓 / 顺势持有】"
             elif (abs(dist_pwl_pct) <= 2.5 or abs(dist_ma50_pct) <= 2.0) and vol_ratio <= 1.2:
                 phase = "🟢 阶段1: 筑底到位"
-                action = "【可分批建仓】"
+                action = "【可分批买入】"
             elif c_p >= ma20 and vol_ratio >= 1.8 and spread_vs_qqq < 0:
                 phase = "⚠️ 阶段3: 滞涨轮出"
-                action = "【分批止盈减仓】"
+                action = "【分批止盈卖出】"
             else:
                 phase = "🔴 阶段4: 弱势破位"
                 action = "【坚决不买 / 观望】"
 
             found = True
             all_rows.append({
-                "代码": sym,
-                "名称": cfg["name"],
-                "阵营": cfg["camp"],
-                "权重": cfg["weight_desc"],
+                "标的": f"{sym} ({cfg['name']})",
                 "现价 ($)": round(c_p, 2),
                 "日涨跌 (%)": round(chg_d, 2),
                 "相对QQQ (%)": round(spread_vs_qqq, 2),
-                "20日均量比": f"{vol_ratio:.1f}x",
-                "周线支撑 ($)": round(pwl, 2),
                 "轮动阶段": phase,
                 "实操指令 (Action)": action
             })
@@ -164,16 +157,11 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
         if not found:
             bear_count += 1
             all_rows.append({
-                "代码": sym,
-                "名称": cfg["name"],
-                "阵营": cfg["camp"],
-                "权重": cfg["weight_desc"],
+                "标的": f"{sym} ({cfg['name']})",
                 "现价 ($)": 0.0,
                 "日涨跌 (%)": 0.0,
                 "相对QQQ (%)": 0.0,
-                "20日均量比": "0.0x",
-                "周线支撑 ($)": 0.0,
-                "轮动阶段": "⚪ 同步整理",
+                "轮动阶段": "⚪ 阶段0: 同步中",
                 "实操指令 (Action)": "【暂且观望】"
             })
 
@@ -198,35 +186,35 @@ def generate_facts_markdown(res):
 
 ### 1. QQQ 宏观风向中枢
 - **截面时间**: `{res['timestamp_myt']}` (美东 `{res['timestamp_ny']}`)
-- **QQQ 指数基准**: 现价 `${res['qqq_curr']:.2f}` ({res['qqq_chg_d']:+.2f}%) | 日线趋势: `{res['qqq_trend']}`
+- **QQQ 指数基准**: 现价 `${res['qqq_curr']:.2f}` ({res['qqq_chg_d']:+.2f}%) | 日线大趋势: `{res['qqq_trend']}`
 - **全场多空分布**: 共 `{res['bull_count']}/13` 只跑赢大盘 (跑输 `{res['bear_count']}/13` 只)
 
-### 2. 13 核心标的日周大级别 Watchlist
-| 代码 | 名称 | 阵营 | 权重 | 现价 ($) | 日涨跌 (%) | 相对QQQ (%) | 均量比 | 周线支撑 ($) | 轮动阶段 | 实操指令 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+### 2. 13 核心标的日周 Watchlist
+| 标的 | 现价 ($) | 日涨跌 (%) | 相对QQQ (%) | 轮动阶段 | 实操指令 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
 """
     for _, r in df.iterrows():
-        md += f"| **{r['代码']}** | {r['名称']} | {r['阵营']} | {r['权重']} | {r['现价 ($)']:.2f} | {r['日涨跌 (%)']:+.2f}% | {r['相对QQQ (%)']:+.2f}% | {r['20日均量比']} | {r['周线支撑 ($)']:.2f} | {r['轮动阶段']} | {r['实操指令 (Action)']} |\n"
+        md += f"| **{r['标的']}** | {r['现价 ($)']:.2f} | {r['日涨跌 (%)']:+.2f}% | {r['相对QQQ (%)']:+.2f}% | {r['轮动阶段']} | {r['实操指令 (Action)']} |\n"
 
     md += """
 ---
 ### 🤖 给 AI 的诊断 Prompt:
-请依据上述 13 核心正股在日线与周线级别的轮动阶段分布与相对 QQQ 强弱：
-1. 评估当前科技板块的资金流入主要集中在哪几只股票；
-2. 筛选出 1-2 只目前最适合逢低分批建仓（阶段1）与 1 只适合追随主升（阶段2）的标的并给出入场逻辑；
-3. 给出 QQQ 大盘方向推演与风险警示。
+请依据上述 13 核心标的日周轮动数据与相对 QQQ 强弱：
+1. 评估当前科技股资金是整体流入还是分化抽逃；
+2. 选出目前最适合分批建仓与顺势持有的标的；
+3. 判定今晚 QQQ 整体走势倾向。
 """
     return md
 
 
 def render_macro_radar_tab():
-    st.subheader("📋 13 核心标的宏观 Watchlist (日线 / 周线大级别轮动罗盘)")
+    st.subheader("📋 13 核心标的宏观 Watchlist (极简大级别罗盘)")
 
     c1, c2 = st.columns([4, 1])
     with c1:
-        st.caption("穿透 7 大权重巨头与 6 大芯片先锋。按日线 D1 与周线 W1 识别资金轮动与买卖时机。")
+        st.caption("基于日线 D1 与周线 W1 识别主力轮动阶段，明确买入/卖出/观望节点。")
     with c2:
-        if st.button("🔄 刷新 Watchlist", key="btn_refresh_watchlist_v4"):
+        if st.button("🔄 刷新 Watchlist", key="btn_refresh_watchlist_v5"):
             st.cache_data.clear()
             st.rerun()
 
@@ -241,7 +229,7 @@ def render_macro_radar_tab():
     bull_cnt = res["bull_count"]
     bear_cnt = res["bear_count"]
 
-    # 1. 顶层：大盘宏观指标条
+    # 1. 顶层：QQQ 大盘宏观指标条
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("🎯 QQQ 现价", f"${res['qqq_curr']:.2f}", f"{res['qqq_chg_d']:+.2f}%")
     m2.metric("📈 QQQ 日线大趋势", res["qqq_trend"])
@@ -250,8 +238,8 @@ def render_macro_radar_tab():
 
     st.markdown("---")
 
-    # 2. 中部：13 标的完整专业 Watchlist 表格
-    st.markdown("#### 📊 13 核心标的全局 Watchlist (从强到弱排序)")
+    # 2. 中部：极简 6 列专业 Watchlist 表格
+    st.markdown("#### 📊 13 核心标的极简 Watchlist (从强到弱)")
     
     df_show = res["df_result"]
 
@@ -275,7 +263,7 @@ def render_macro_radar_tab():
         else:
             styles[sp_idx] = "color: #EF4444; font-weight: bold;"
 
-        if "可分批建仓" in act_val:
+        if "可分批买入" in act_val:
             styles[act_idx] = "background-color: #1E3A8A; color: #93C5FD; font-weight: bold;"
         elif "加仓" in act_val:
             styles[act_idx] = "background-color: #064E3B; color: #6EE7B7; font-weight: bold;"
@@ -287,11 +275,11 @@ def render_macro_radar_tab():
         return styles
 
     styled_df = df_show.style.apply(style_watchlist, axis=1)
-    st.dataframe(styled_df, use_container_width=True, height=500, hide_index=True)
+    st.dataframe(styled_df, use_container_width=True, height=480, hide_index=True)
 
     st.markdown("---")
 
-    # 3. 底部：纯净 Markdown 战报一键复制给 AI
+    # 3. 底部：纯净 Markdown 事实数据包一键复制
     st.markdown("#### 🤖 AI 深度分析数据包 (点击右上角一键复制)")
     ai_md = generate_facts_markdown(res)
     st.code(ai_md, language="markdown")
