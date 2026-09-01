@@ -1,5 +1,5 @@
 # 文件名: macro_radar_plugin.py
-# 作用: 13 核心标的 TradingView 旗舰级交互日线战区穿透与触点罗盘 (支持滚轮缩放/趋势线/触点分析)
+# 作用: 13 核心标的 TradingView 旗舰级交互日线战区穿透与触点罗盘 (主副图严格像素对齐)
 
 import datetime
 import numpy as np
@@ -199,7 +199,6 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
                 "vol_ratio": 0.0
             })
 
-    # 为 QQQ 单独注入战区字典
     if "QQQ" in data_daily and len(data_daily["QQQ"]) >= 20:
         q_df = data_daily["QQQ"]
         q_cp = float(q_df["Close"].iloc[-1])
@@ -228,17 +227,18 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
 
 
 def render_stock_zone_chart(sym, df_daily, zones):
-    """绘制 TradingView 旗舰级 K 线图：支持滚轮无级缩放、趋势线通道与触点高亮"""
+    """绘制 TradingView 旗舰级 K 线图：主副图严丝合缝垂直对齐"""
     if df_daily is None or df_daily.empty or len(df_daily) < 10:
         st.warning(f"标的 {sym} 暂无足够日线历史数据。")
         return
 
     df = df_daily.tail(75).copy()
+    time_series = df.index.strftime('%Y-%m-%d').tolist()
+
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
     df["VMA20"] = df["Volume"].rolling(20).mean()
 
-    # 自动识别局部高低极值点与自动趋势通道 (Auto Trendline Channels)
     df["High_Roll"] = df["High"].rolling(7, center=True).max()
     df["Low_Roll"] = df["Low"].rolling(7, center=True).min()
     peak_highs = df[df["High"] == df["High_Roll"]]
@@ -252,9 +252,9 @@ def render_stock_zone_chart(sym, df_daily, zones):
         subplot_titles=(None, None)
     )
 
-    # 1. TradingView 质感 K 线 (翡翠绿 #089981 / 珊瑚红 #F23645)
+    # 1. TradingView 质感 K 线
     fig.add_trace(go.Candlestick(
-        x=df.index.strftime('%Y-%m-%d'),
+        x=time_series,
         open=df['Open'], high=df['High'],
         low=df['Low'], close=df['Close'],
         name="日线 K 线",
@@ -265,16 +265,16 @@ def render_stock_zone_chart(sym, df_daily, zones):
 
     # 2. 均线与机构生命线
     fig.add_trace(go.Scatter(
-        x=df.index.strftime('%Y-%m-%d'), y=df["MA20"],
+        x=time_series, y=df["MA20"],
         line=dict(color="#F59E0B", width=1.6), name="MA20 (动量生命线)"
     ), row=1, col=1)
 
     fig.add_trace(go.Scatter(
-        x=df.index.strftime('%Y-%m-%d'), y=df["MA50"],
+        x=time_series, y=df["MA50"],
         line=dict(color="#38BDF8", width=1.8), name="MA50 (机构中枢成本线)"
     ), row=1, col=1)
 
-    # 3. 自动高低点趋势通道线 (Trendline Structure)
+    # 3. 趋势通道线
     if len(peak_highs) >= 2:
         last_peaks = peak_highs.tail(3)
         fig.add_trace(go.Scatter(
@@ -291,33 +291,28 @@ def render_stock_zone_chart(sym, df_daily, zones):
             name="波段低点支撑趋势线"
         ), row=1, col=1)
 
-    # 4. 渲染三大实操战区色带与触点侦测 (Touchpoints)
+    # 4. 战区色带与触点扫描
     annotations = []
     if zones:
-        # 🟢 买入建仓区 (半透明青绿)
         fig.add_hrect(
             y0=zones["buy_low"], y1=zones["buy_high"],
             fillcolor="rgba(16, 185, 129, 0.16)", line_width=1, line_color="#10B981",
             layer="below", row=1, col=1
         )
-        # 🚀 持仓波段区 (半透明深蓝)
         fig.add_hrect(
             y0=zones["hold_low"], y1=zones["hold_high"],
             fillcolor="rgba(59, 130, 246, 0.08)", line_width=1, line_dash="dash", line_color="rgba(59, 130, 246, 0.4)",
             layer="below", row=1, col=1
         )
-        # ⚠️ 减仓卖出区 (半透明绯红)
         fig.add_hrect(
             y0=zones["sell_low"], y1=zones["sell_high"],
             fillcolor="rgba(239, 68, 68, 0.16)", line_width=1, line_color="#EF4444",
             layer="below", row=1, col=1
         )
 
-        # 扫描最近 15 根 K 线的战区触碰点 (Touchpoints)
         recent_scan = df.tail(15)
         for d_str, row_k in recent_scan.iterrows():
             d_fmt = d_str.strftime('%Y-%m-%d')
-            # 触碰买入区低吸点
             if row_k["Low"] <= zones["buy_high"] and row_k["High"] >= zones["buy_low"]:
                 annotations.append(dict(
                     x=d_fmt, y=row_k["Low"], xref="x1", yref="y1",
@@ -326,7 +321,6 @@ def render_stock_zone_chart(sym, df_daily, zones):
                     bgcolor="#064E3B", bordercolor="#10B981", borderwidth=1,
                     font=dict(color="#6EE7B7", size=9, family="Consolas")
                 ))
-            # 触碰减仓区阻力点
             elif row_k["High"] >= zones["sell_low"] and row_k["Low"] <= zones["sell_high"]:
                 annotations.append(dict(
                     x=d_fmt, y=row_k["High"], xref="x1", yref="y1",
@@ -336,23 +330,22 @@ def render_stock_zone_chart(sym, df_daily, zones):
                     font=dict(color="#FCA5A5", size=9, family="Consolas")
                 ))
 
-        # 周线极值辅助虚线
         fig.add_hline(y=zones["pwh"], line_dash="dot", line_color="#FCD34D", line_width=1.2, annotation_text=f" 周高 PWH: ${zones['pwh']:.2f}", annotation_position="top left", row=1, col=1)
         fig.add_hline(y=zones["pwl"], line_dash="dot", line_color="#93C5FD", line_width=1.2, annotation_text=f" 周低 PWL: ${zones['pwl']:.2f}", annotation_position="bottom left", row=1, col=1)
 
-    # 5. 副图成交量与均量线 (VPA 风格)
+    # 5. 副图成交量与均量线 (严格绑定相同的分类 X 轴与固定柱体宽度)
     bar_colors = np.where(df["Close"] >= df["Open"], "#089981", "#F23645")
     fig.add_trace(go.Bar(
-        x=df.index.strftime('%Y-%m-%d'), y=df["Volume"],
-        name="日成交量", marker=dict(color=bar_colors)
+        x=time_series, y=df["Volume"],
+        name="日成交量", marker=dict(color=bar_colors),
+        width=0.65  # 统一柱体宽度
     ), row=2, col=1)
 
     fig.add_trace(go.Scatter(
-        x=df.index.strftime('%Y-%m-%d'), y=df["VMA20"],
+        x=time_series, y=df["VMA20"],
         line=dict(color="#E5E7EB", width=1.2), name="20日均量"
     ), row=2, col=1)
 
-    # 6. TradingView 黑暗终端高级布局配置 (全面开启滚轮缩放与跨轴光标)
     cfg_name = TICKERS_CONFIG.get(sym, {}).get("name", "大盘基准" if sym == "QQQ" else sym)
     
     fig.update_layout(
@@ -368,7 +361,7 @@ def render_stock_zone_chart(sym, df_daily, zones):
         plot_bgcolor="#0B0F19",
         hovermode="x unified",
         xaxis_rangeslider_visible=False,
-        dragmode="pan",  # 默认鼠标拖拽平移 (如 TradingView)
+        dragmode="pan",
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=0.99,
             font=dict(size=10, color="#94A3B8"), bgcolor="rgba(15, 23, 42, 0.8)", bordercolor="#334155", borderwidth=1
@@ -376,11 +369,15 @@ def render_stock_zone_chart(sym, df_daily, zones):
         annotations=annotations
     )
 
-    # 主图与副图坐标轴优化（十字星联动光标）
     fig.update_xaxes(
         type="category", gridcolor="#1E293B", tickfont=dict(family="Consolas", color="#94A3B8", size=10),
         showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#64748B", spikethickness=1, spikedash="dot",
         row=1, col=1
+    )
+    fig.update_xaxes(
+        type="category", gridcolor="#1E293B", tickfont=dict(family="Consolas", color="#94A3B8", size=10),
+        showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#64748B", spikethickness=1, spikedash="dot",
+        row=2, col=1
     )
     fig.update_yaxes(
         gridcolor="#1E293B", tickfont=dict(family="Consolas", color="#94A3B8", size=10),
@@ -392,13 +389,12 @@ def render_stock_zone_chart(sym, df_daily, zones):
         row=2, col=1
     )
 
-    # 核心：注入 config 开启滑鼠滚轮缩放 (scrollZoom) 与原生 TradingView 工具条
     st.plotly_chart(
         fig,
         use_container_width=True,
         config={
-            "scrollZoom": True,           # 开启滚轮缩放
-            "displayModeBar": True,       # 显示专业工具栏
+            "scrollZoom": True,
+            "displayModeBar": True,
             "modeBarButtonsToRemove": ["lasso2d", "select2d"],
             "displaylogo": False,
             "toImageButtonOptions": {"format": "png", "filename": f"{sym}_daily_chart"}
@@ -441,7 +437,7 @@ def render_macro_radar_tab():
     with c1:
         st.caption("基于日线 D1 均线与周线 W1 极值量化买入/持仓/卖出价格区间。点击下方标的按钮即可穿透查看单股日线图、三大战区色带与触点分析。")
     with c2:
-        if st.button("🔄 刷新 Watchlist", key="btn_refresh_watchlist_v8"):
+        if st.button("🔄 刷新 Watchlist", key="btn_refresh_watchlist_v9"):
             st.cache_data.clear()
             st.rerun()
 
