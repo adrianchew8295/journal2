@@ -1,5 +1,5 @@
 # 文件名: macro_radar_plugin.py
-# 作用: 极简 1 秒看懂版 · 13 标的多空拔河罗盘 (杜绝复杂折线与散点)
+# 作用: 13 标的多空拔河罗盘 (SNDK 永久保底显示 + 极简 1 秒大白话决策)
 
 import datetime
 import numpy as np
@@ -122,13 +122,16 @@ def compute_radar_facts_integrated(data_5m, data_daily):
 
     for sym, cfg in TICKERS_CONFIG.items():
         w = cfg["weight"]
+        found = False
+
         if sym in day_slice and len(day_slice[sym]) > 0:
             s_df = day_slice[sym]
             b_p = float(s_df["Open"].iloc[0])
             c_p = float(s_df["Close"].iloc[-1])
             if b_p > 0 and not np.isnan(b_p) and not np.isnan(c_p):
                 chg = ((c_p - b_p) / b_p) * 100
-                spread = chg - qqq_chg  # 相对 QQQ 的净强弱
+                spread = chg - qqq_chg
+                found = True
 
                 if spread >= 0:
                     bull_power += w
@@ -151,6 +154,21 @@ def compute_radar_facts_integrated(data_5m, data_daily):
                     "Weight": w
                 })
 
+        # 保底机制：若接口数据延迟，依然强制加入列表显示
+        if not found:
+            bear_power += (w * 0.5)
+            stock_rows.append({
+                "状态": "⚪",
+                "代码": sym,
+                "公司": cfg["name"],
+                "影响力权重": cfg["weight_desc"],
+                "现价 ($)": 0.00,
+                "今日涨跌": "0.00%",
+                "相对大盘差值": -0.01,
+                "白话实操动作": "【盘前数据同步中】",
+                "Weight": w
+            })
+
     df_result = pd.DataFrame(stock_rows).sort_values(by="相对大盘差值", ascending=False)
     total_power = max(bull_power + bear_power, 1.0)
     bull_pct = (bull_power / total_power) * 100
@@ -172,7 +190,7 @@ def compute_radar_facts_integrated(data_5m, data_daily):
 def render_macro_radar_tab():
     st.subheader("📡 13 核心标的多空拔河罗盘 (1秒看懂主力意图)")
 
-    if st.button("🔄 刷新最新主力拔河战况", key="btn_refresh_tug_of_war"):
+    if st.button("🔄 刷新最新主力拔河战况", key="btn_refresh_tug_of_war_v2"):
         st.cache_data.clear()
         st.rerun()
 
@@ -213,7 +231,7 @@ def render_macro_radar_tab():
     </div>
     """, unsafe_allow_html=True)
 
-    # 2. 拔河计分板柱状图 (小学生都能看懂的红绿对比)
+    # 2. 拔河计分板柱状图
     st.markdown("#### ⚖️ 今日多空力量拔河对比条")
     fig_bar = go.Figure()
 
@@ -252,7 +270,7 @@ def render_macro_radar_tab():
 
     st.markdown("---")
 
-    # 3. 13 标的直观明细清单 (按谁在买、谁在砸排好序)
+    # 3. 13 标的完整站队清单
     st.markdown("#### 📋 13 核心标的即时站队表 (从最强到最弱)")
     df_show = res["df_result"][["状态", "代码", "公司", "影响力权重", "现价 ($)", "今日涨跌", "白话实操动作"]]
     st.dataframe(df_show, use_container_width=True, hide_index=True)
