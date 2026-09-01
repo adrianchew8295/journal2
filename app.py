@@ -1,5 +1,5 @@
 # 文件名: app.py
-# 作用: 聚合 Tab 1 宏观雷达 + Tab 2 富途 13 行参数 + Tab 3 月历账本/昨夜战场核验/双层 VPA 回放/13行全量明细表
+# 作用: 旗舰级 QQQ 战区座舱 (Tab 3 纯 5 交易日宽屏月历 + 右侧战术纪律看板 + 13行历史明细)
 
 import calendar
 import datetime
@@ -49,7 +49,7 @@ st.markdown("---")
 tab_macro, tab_cockpit, tab_journal = st.tabs([
     "📡 宏观雷达 (13 标的事实穿透)",
     "🎯 战区座舱 (13 行富途代码)",
-    "📅 QQQ 2B 同频月历与深度复盘全景"
+    "📅 QQQ 2B 同频月历与多维复盘"
 ])
 
 # ================= TAB 1: 宏观雷达 =================
@@ -106,44 +106,8 @@ with tab_cockpit:
 # ================= TAB 3: 月历账本与全量深度复盘 =================
 with tab_journal:
     st.subheader("📅 QQQ 2B 同频月历账本与多维复盘 (22:00 - 24:00 MYT)")
-    
-    # ---------------- 模块 A: 昨夜战况极速诊断 ----------------
-    with st.expander(f"⚡ 展开查看【昨夜 ({yesterday_myt_str}) 22:00-24:00 战况极速核验】", expanded=True):
-        col_y_btn, col_y_txt = st.columns([1.5, 3])
-        with col_y_btn:
-            if st.button("🔄 刷新昨夜信号核验", key="btn_refresh_yest_box"):
-                st.cache_data.clear()
-                st.rerun()
-        
-        d1h_y, d5m_y, _ = fetch_raw_data_with_retry(period_5m="5d")
-        if d1h_y is not None and d5m_y is not None:
-            dt_y_10pm_myt = tz_myt.localize(datetime.datetime.combine(yesterday_d, datetime.time(22, 0, 0)))
-            cutoff_y_ny = dt_y_10pm_myt.astimezone(tz_ny)
-            window_y_end_ny = cutoff_y_ny + timedelta(hours=2)
-            
-            p_y = compute_futu_13_params(d1h_y, d5m_y, cutoff_y_ny)
-            if p_y:
-                trades_y, day_5m_y = simulate_trades_with_2b(d5m_y, p_y, cutoff_y_ny, window_y_end_ny)
-                yc1, yc2, yc3, yc4 = st.columns(4)
-                yc1.metric("🚦 昨夜三灯定调", p_y["BIAS_DESC"])
-                yc2.metric("📈 昨夜 1H EMA20", f"${p_y['EMA20_1H']:.2f}")
-                yc3.metric("📊 昨夜 1H ATR", f"${p_y['ATR_1H']:.2f}")
-                
-                if trades_y:
-                    t_first = trades_y[0]
-                    yc4.metric("🎯 昨夜战果", f"{t_first['Result']} ({t_first['PnL_Points']:+.2f} pt)", f"信号: {t_first['Signal']}")
-                    st.dataframe(pd.DataFrame(trades_y)[[c for c in pd.DataFrame(trades_y).columns if not c.endswith("_DT_NY")]], use_container_width=True, hide_index=True)
-                else:
-                    yc4.metric("🎯 昨夜战果", "⚪ 严格空仓", "未触发开仓形态")
-                    st.info("昨夜价格未触及战区准入条件，或未出现 1.25 倍放量 2B/吞没反转，严格执行空仓纪律。")
-            else:
-                st.warning("昨夜战区参数正在同步中...")
-        else:
-            st.warning("行情接口连接中，请稍候点击刷新。")
 
-    st.markdown("---")
-
-    # ---------------- 模块 B: 月历年月选择与四大指标卡 ----------------
+    # 1. 顶部年月选择与操作区
     c_y, c_m, c_exp = st.columns([1, 1, 2])
     with c_y:
         sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker")
@@ -190,7 +154,7 @@ with tab_journal:
                             ok, _ = append_to_journal(d.strftime("%Y-%m-%d"), p_day, trades_day, overwrite=True)
                             if ok: added_cnt += 1
                     
-                    st.success(f"🎉 回溯完成，已生成 {added_cnt} 个交易日记录！")
+                    st.success(f"🎉 回溯完成，已同步 {added_cnt} 个交易日！")
                     st.rerun()
 
     with col_btn3:
@@ -212,6 +176,7 @@ with tab_journal:
     valid_trades = df_month[df_month["Signal"] != "NO_TRADE"] if not df_month.empty else pd.DataFrame()
     total_trades = len(valid_trades)
     win_trades = len(valid_trades[valid_trades["PnL_Points"] > 0]) if total_trades > 0 else 0
+    loss_trades = len(valid_trades[valid_trades["PnL_Points"] < 0]) if total_trades > 0 else 0
     win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
     net_pnl = df_month["PnL_Points"].sum() if not df_month.empty else 0.0
     empty_days = len(df_month[df_month["Signal"] == "NO_TRADE"]) if not df_month.empty else 0
@@ -221,20 +186,17 @@ with tab_journal:
             csv_data = df_month.to_csv(index=False, encoding="utf-8-sig")
             st.download_button(f"📥 导出 {sel_y}年{sel_m}月 完整账本 (.csv)", csv_data, f"journal_{sel_y}_{sel_m:02d}.csv", "text/csv")
 
+    # 四大战绩大卡片
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("🗓️ 统计月份", f"{sel_y} 年 {sel_m} 月")
     k2.metric("💰 窗口净盈亏", f"{net_pnl:+.2f} pt", "正向收益" if net_pnl >= 0 else "回撤控制中")
-    k3.metric("🎯 战区胜率", f"{win_rate:.1f}%", f"{win_trades} 胜 / {total_trades} 战")
-    k4.metric("📊 交易笔数", f"{total_trades} 笔", f"空仓 {empty_days} 天")
+    k3.metric("🎯 战区胜率", f"{win_rate:.1f}%", f"{win_trades} 胜 / {loss_trades} 负")
+    k4.metric("📊 执行情况", f"{total_trades} 次开仓", f"严格空仓 {empty_days} 天")
 
     st.markdown("---")
 
-    # ---------------- 模块 C: 月历网格与直达看图 ----------------
-    cal = calendar.monthcalendar(sel_y, sel_m)
-    cols_header = st.columns(7)
-    days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
-    for idx, d_name in enumerate(days_name):
-        cols_header[idx].markdown(f"<div style='text-align:center; font-weight:bold; color:#a0aec0;'>{d_name}</div>", unsafe_allow_html=True)
+    # 2. 核心布局优化：左侧 5 列工作日月历 (周一至周五) + 右侧战术纪律看板
+    col_cal_left, col_cal_right = st.columns([3.2, 1.2])
 
     day_records = {}
     recorded_dates_list = []
@@ -250,37 +212,103 @@ with tab_journal:
     elif st.session_state["active_chart_date"] not in recorded_dates_list and recorded_dates_list:
         st.session_state["active_chart_date"] = recorded_dates_list[0]
 
-    for week in cal:
-        w_cols = st.columns(7)
-        for d_idx, day_num in enumerate(week):
-            with w_cols[d_idx]:
-                if day_num == 0:
-                    st.markdown("<div style='height:115px;'></div>", unsafe_allow_html=True)
-                elif d_idx in [5, 6]:
-                    st.markdown(f"<div style='border:1px dashed #2d3748; border-radius:6px; padding:6px; height:115px; background-color:#141824; text-align:center;'><span style='color:#718096; font-size:11px;'>{day_num}</span><br><span style='color:#4a5568; font-size:11px;'>💤 休市</span></div>", unsafe_allow_html=True)
-                else:
-                    if day_num in day_records:
-                        rec = day_records[day_num]
-                        pnl = float(rec["PnL_Points"])
-                        bias_v = rec["TREND_BIAS"]
-                        bias_tag = "多" if bias_v > 0 else ("空" if bias_v < 0 else "震荡")
-                        this_date_str = str(rec["Date_MYT"])
-                        
-                        if rec["Signal"] == "NO_TRADE":
-                            st.markdown(f"<div style='border:1px solid #2d3748; border-radius:6px; padding:4px; height:70px; background-color:#1a202c;'><span style='color:#a0aec0; font-size:11px;'>{day_num} ({bias_tag})</span><br><span style='color:#718096; font-size:11px;'>⚪ 纪律空仓</span></div>", unsafe_allow_html=True)
-                        else:
-                            bg_c = "#064e3b" if pnl > 0 else "#7f1d1d"
-                            st.markdown(f"<div style='border:1px solid #48bb78; border-radius:6px; padding:4px; height:70px; background-color:{bg_c};'><span style='color:#e2e8f0; font-size:11px;'>{day_num} ({bias_tag})</span><br><span style='color:#fff; font-size:12px; font-weight:bold;'>{pnl:+.2f} pt</span></div>", unsafe_allow_html=True)
-                        
-                        is_cur = (st.session_state["active_chart_date"] == this_date_str)
-                        btn_txt = "👉 正在看" if is_cur else "🔍 查图"
-                        if st.button(btn_txt, key=f"btn_cal_day_{this_date_str}"):
-                            st.session_state["active_chart_date"] = this_date_str
-                            st.rerun()
-                    else:
-                        st.markdown(f"<div style='border:1px dashed #2d3748; border-radius:6px; padding:6px; height:115px; text-align:center;'><span style='color:#4a5568; font-size:11px;'>{day_num}</span><br><span style='color:#4a5568; font-size:10px;'>-</span></div>", unsafe_allow_html=True)
+    with col_cal_left:
+        st.markdown("#### 🗓️ 交易日月历 (周一至周五 · 点击即时查图)")
+        cal = calendar.monthcalendar(sel_y, sel_m)
+        
+        # 只放 5 列标题
+        cols_header = st.columns(5)
+        days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)"]
+        for idx, d_name in enumerate(days_name):
+            cols_header[idx].markdown(f"<div style='text-align:center; font-weight:bold; color:#a0aec0; font-size:13px;'>{d_name}</div>", unsafe_allow_html=True)
 
-    # ---------------- 模块 D: 13 行全量战区参数历史明细表 ----------------
+        for week in cal:
+            workdays = week[0:5]  # 只切取周一到周五
+            if all(d == 0 for d in workdays):
+                continue
+                
+            w_cols = st.columns(5)
+            for d_idx, day_num in enumerate(workdays):
+                with w_cols[d_idx]:
+                    if day_num == 0:
+                        st.markdown("<div style='height:105px;'></div>", unsafe_allow_html=True)
+                    else:
+                        if day_num in day_records:
+                            rec = day_records[day_num]
+                            pnl = float(rec["PnL_Points"])
+                            bias_v = rec["TREND_BIAS"]
+                            bias_tag = "多" if bias_v > 0 else ("空" if bias_v < 0 else "震荡")
+                            this_date_str = str(rec["Date_MYT"])
+                            is_active = (st.session_state["active_chart_date"] == this_date_str)
+                            
+                            border_style = "2px solid #ffd700" if is_active else ("1px solid #48bb78" if pnl > 0 else ("1px solid #e53e3e" if pnl < 0 else "1px solid #4a5568"))
+                            
+                            if rec["Signal"] == "NO_TRADE":
+                                bg_color = "#1a202c"
+                                status_html = "<span style='color:#a0aec0; font-size:11px;'>⚪ 纪律空仓</span>"
+                            else:
+                                bg_color = "#064e3b" if pnl > 0 else "#7f1d1d"
+                                sgn = "+" if pnl > 0 else ""
+                                status_html = f"<span style='color:#fff; font-size:13px; font-weight:bold;'>{sgn}{pnl:.2f} pt</span><br><span style='color:#e2e8f0; font-size:10px;'>{rec['Signal']}</span>"
+
+                            st.markdown(f"""
+                            <div style='border:{border_style}; border-radius:6px; padding:6px; min-height:68px; background-color:{bg_color}; text-align:center;'>
+                                <div style='text-align:left; color:#cbd5e0; font-size:11px; font-weight:bold;'>{day_num} <span style='font-size:9px; color:#a0aec0;'>({bias_tag})</span></div>
+                                {status_html}
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            btn_label = "👉 正在看" if is_active else "🔍 查图"
+                            if st.button(btn_label, key=f"btn_cal_5d_{this_date_str}"):
+                                st.session_state["active_chart_date"] = this_date_str
+                                st.rerun()
+                        else:
+                            st.markdown(f"""
+                            <div style='border:1px dashed #2d3748; border-radius:6px; padding:6px; min-height:100px; text-align:center; background-color:#111827;'>
+                                <div style='text-align:left; color:#4a5568; font-size:11px;'>{day_num}</div>
+                                <div style='margin-top:25px; color:#4a5568; font-size:11px;'>休战 / 无数据</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+    # 3. 右侧：战术看板 (原周末空位被高效利用)
+    with col_cal_right:
+        st.markdown("#### 🛡️ 战术纪律看板")
+        
+        cur_sel_date = st.session_state.get("active_chart_date")
+        if cur_sel_date and not df_month.empty:
+            sel_rec_series = df_month[df_month["Date_MYT"].astype(str) == cur_sel_date]
+            if not sel_rec_series.empty:
+                s_row = sel_rec_series.iloc[0]
+                b_val = s_row.get("TREND_BIAS", 0)
+                b_desc = "🟢 绿灯多" if b_val > 0 else ("🔴 红灯空" if b_val < 0 else "🟡 震荡防守")
+                
+                st.info(f"""
+                **📌 选中日期**: `{cur_sel_date}`
+                - **宏观定调**: `{b_desc}`
+                - **执行信号**: `{s_row['Signal']}`
+                - **窗口盈亏**: `{float(s_row['PnL_Points']):+.2f} pt`
+                - **入场点位**: `${float(s_row.get('Entry_Price', 0.0)):.2f}`
+                - **止盈 / 止损**: `${float(s_row.get('TP', 0.0)):.2f}` / `${float(s_row.get('SL', 0.0)):.2f}`
+                - **平仓原因**: `{s_row.get('Reason', '纪律平仓')}`
+                """)
+            else:
+                st.info(f"选定 `{cur_sel_date}` 无详细开仓数据。")
+        else:
+            st.info("💡 点击左侧月历中任意一天的「🔍 查图」，此处将实时联动展示战术明细。")
+
+        st.markdown("---")
+        st.markdown("**📊 战术统计分析：**")
+        total_days_cnt = max(len(df_month), 1)
+        discipline_rate = (empty_days / total_days_cnt) * 100
+        st.write(f"🛡️ **空仓防守率**: `{discipline_rate:.1f}%` (无脑不开单)")
+        st.write(f"🎯 **开仓出手率**: `{100 - discipline_rate:.1f}%` (精准抓机会)")
+        if total_trades > 0:
+            avg_win = valid_trades[valid_trades["PnL_Points"] > 0]["PnL_Points"].mean() if win_trades > 0 else 0.0
+            avg_loss = abs(valid_trades[valid_trades["PnL_Points"] < 0]["PnL_Points"].mean()) if loss_trades > 0 else 0.0
+            pnl_ratio = (avg_win / avg_loss) if avg_loss > 0 else (avg_win if avg_win > 0 else 1.0)
+            st.write(f"⚖️ **实操平均盈亏比**: `{pnl_ratio:.2f} : 1`")
+
+    # 4. 13 行全量战区参数历史明细表
     st.markdown("---")
     with st.expander(f"🔍 展开查看【{sel_y} 年 {sel_m} 月 13 行全量战区点位与交易历史大表】", expanded=False):
         if not df_month.empty:
@@ -296,7 +324,7 @@ with tab_journal:
         else:
             st.info("当月暂无历史数据，请点击上方「一键回溯」生成。")
 
-    # ---------------- 模块 E: 5M 走势与副图 VPA 量价异动双层图表 ----------------
+    # 5. 旗舰级 5M 走势与副图 VPA 量价异动双层图表
     st.markdown("---")
     active_date = st.session_state.get("active_chart_date")
     if active_date and not df_month.empty:
