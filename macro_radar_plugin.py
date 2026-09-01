@@ -1,30 +1,34 @@
 # 文件名: macro_radar_plugin.py
-# 作用: QQQ 宏观雷达与 13 标的事实穿透看板 (加权双浪 + 日周大级别点位 + 波动消耗门禁)
+# 作用: 13 标的加权宏观雷达 (SNDK 走 Tiingo API + 雅虎双通道 · 彻底清除 NaN 异常)
 
 import datetime
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import pytz
+import requests
 import streamlit as st
 import yfinance as yf
 
 tz_ny = pytz.timezone("America/New_York")
 tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 
-# 13 核心标的配置：包含市值影响力权重与行业角色
+# Tiingo 访问凭证
+TIINGO_TOKEN = "bcffe3a5cf7eeef085e405cfa4a3e5691b976217"
+
+# 13 核心标的配置 (含市值影响力权重)
 TICKERS_CONFIG = {
-    # 👑 第一梯队：核心权重定海神针 (Weight: 3.0 - 决定大盘命脉)
+    # 👑 第一梯队：核心权重定海神针 (Weight: 3.0)
     "NVDA": {"name": "NVIDIA", "tier": "巨头", "weight": 3.0, "role": "AI算力总舵手"},
     "AAPL": {"name": "Apple", "tier": "巨头", "weight": 3.0, "role": "消费电子/防守中枢"},
     "MSFT": {"name": "Microsoft", "tier": "巨头", "weight": 3.0, "role": "云端权重底座"},
-    # 🏛️ 第二梯队：中枢巨头 (Weight: 2.0 - 影响大盘反弹力度)
+    # 🏛️ 第二梯队：中枢巨头 (Weight: 2.0)
     "AMZN": {"name": "Amazon", "tier": "巨头", "weight": 2.0, "role": "电商与云权重"},
     "GOOGL": {"name": "Alphabet", "tier": "巨头", "weight": 2.0, "role": "搜索广告权重"},
     "META": {"name": "Meta", "tier": "巨头", "weight": 2.0, "role": "社交开源生态"},
     "TSLA": {"name": "Tesla", "tier": "巨头", "weight": 2.0, "role": "流动性先锋"},
     "AVGO": {"name": "Broadcom", "tier": "先锋", "weight": 2.0, "role": "网络与芯片核心"},
-    # 🚀 第三梯队：情绪进攻先锋 (Weight: 1.0 - 高贝塔风向标)
+    # 🚀 第三梯队：情绪进攻先锋 (Weight: 1.0)
     "MU": {"name": "Micron", "tier": "先锋", "weight": 1.0, "role": "存储/HBM龙头"},
     "AMD": {"name": "AMD", "tier": "先锋", "weight": 1.0, "role": "算力二当家"},
     "WDC": {"name": "Western Digital", "tier": "先锋", "weight": 1.0, "role": "存储与硬盘"},
@@ -35,25 +39,61 @@ TICKERS_CONFIG = {
 ALL_SYMBOLS = ["QQQ"] + list(TICKERS_CONFIG.keys())
 
 
+def fetch_from_tiingo_5m(ticker):
+    """从 Tiingo IEX 接口拉取 5M/1H 分时数据"""
+    try:
+        start_date = (datetime.datetime.now(tz_ny) - datetime.timedelta(days=5)).strftime("%Y-%m-%d")
+        url = f"https://api.tiingo.com/iex/{ticker}/prices?startDate={start_date}&resampleFreq=5min&token={TIINGO_TOKEN}&columns=open,high,low,close,volume"
+        resp = requests.get(url, headers={"Content-Type": "application/json"}, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data and isinstance(data, list) and len(data) > 0:
+                df = pd.DataFrame(data)
+                df["date"] = pd.to_datetime(df["date"])
+                df.set_index("date", inplace=True)
+                df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"}, inplace=True)
+                df = df[["Open", "High", "Low", "Close", "Volume"]].dropna().sort_index()
+                if not df.empty:
+                    df.index = df.index.tz_localize("UTC").tz_convert(tz_ny) if df.index.tz is None else df.index.tz_convert(tz_ny)
+                    return df
+    except Exception:
+        pass
+    return None
+
+
 @st.cache_data(ttl=180)
 def fetch_radar_data_advanced():
-    """抓取 5M 日内分时流与日线/周线大级别历史事实"""
+    """双通道抓取：SNDK 优先 Tiingo，其余 YahooFinance + 容错兜底"""
     data_5m = {}
     data_daily = {}
     data_weekly = {}
 
     for sym in ALL_SYMBOLS:
+        # 1. 5M 分时抓取
+        df_5m = None
+        if sym == "SNDK":
+            df_5m = fetch_from_tiingo_5m("SNDK")
+        
+        if df_5m is None or df_5m.empty:
+            try:
+                ticker = yf.Ticker(sym)
+                df_yf = ticker.history(period="5d", interval="5m", prepost=True)
+                if df_yf is not None and not df_yf.empty:
+                    if isinstance(df_yf.columns, pd.MultiIndex):
+                        df_yf.columns = df_yf.columns.get_level_values(0)
+                    sub = df_yf[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"]).copy()
+                    if not sub.empty:
+                        sub.index = sub.index.tz_localize("UTC").tz_convert(tz_ny) if sub.index.tz is None else sub.index.tz_convert(tz_ny)
+                        df_5m = sub
+            except Exception:
+                pass
+        
+        if df_5m is not None and not df_5m.empty:
+            data_5m[sym] = df_5m
+
+        # 2. 日线与周线抓取
         try:
             ticker = yf.Ticker(sym)
-            df_5m = ticker.history(period="5d", interval="5m", prepost=True)
-            if df_5m is not None and not df_5m.empty:
-                if isinstance(df_5m.columns, pd.MultiIndex):
-                    df_5m.columns = df_5m.columns.get_level_values(0)
-                sub_5m = df_5m[["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Close"]).copy()
-                if not sub_5m.empty:
-                    sub_5m.index = sub_5m.index.tz_localize("UTC").tz_convert(tz_ny) if sub_5m.index.tz is None else sub_5m.index.tz_convert(tz_ny)
-                    data_5m[sym] = sub_5m
-
             df_1d = ticker.history(period="3mo", interval="1d")
             if df_1d is not None and not df_1d.empty:
                 if isinstance(df_1d.columns, pd.MultiIndex):
@@ -95,7 +135,7 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
     qqq_chg = ((qqq_curr - qqq_base) / qqq_base) * 100
     qqq_norm = (qqq_df["Close"] / qqq_base) * 100
 
-    # 1. 整合第三点：日内 ATR 波动消耗率 (ATR Range Used %)
+    # ATR 消耗率
     atr_used_pct = 0.0
     atr_1d_val = 4.0
     if "QQQ" in data_daily and len(data_daily["QQQ"]) >= 14:
@@ -103,10 +143,8 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
         tr = np.maximum(d_df["High"] - d_df["Low"], np.maximum((d_df["High"] - d_df["Close"].shift(1)).abs(), (d_df["Low"] - d_df["Close"].shift(1)).abs()))
         atr_1d_val = float(tr.rolling(14).mean().iloc[-1])
         if atr_1d_val > 0:
-            day_range = qqq_high - qqq_low
-            atr_used_pct = (day_range / atr_1d_val) * 100
+            atr_used_pct = ((qqq_high - qqq_low) / atr_1d_val) * 100
 
-    # 2. 整合第一点：市值加权双浪计算 (Weighted Waves)
     t1_series_list, t1_weights = [], []
     t2_series_list, t2_weights = [], []
     facts_table = []
@@ -115,95 +153,97 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
 
     for sym, cfg in TICKERS_CONFIG.items():
         w = cfg["weight"]
+        has_valid_data = False
+
         if sym in day_slice and len(day_slice[sym]) > 0:
             s_df = day_slice[sym]
             b_p = float(s_df["Open"].iloc[0])
             c_p = float(s_df["Close"].iloc[-1])
             
-            if b_p > 0:
+            if b_p > 0 and not np.isnan(b_p) and not np.isnan(c_p):
                 chg = ((c_p - b_p) / b_p) * 100
                 s_norm = (s_df["Close"] / b_p) * 100
                 spread = (s_norm - qqq_norm).dropna()
 
                 if not spread.empty:
                     latest_sp = float(spread.iloc[-1])
-                    
-                    # 日线均量倍数
-                    vol_ratio = 1.0
-                    d_ma50 = c_p
-                    if sym in data_daily and len(data_daily[sym]) >= 5:
-                        avg_vol = float(data_daily[sym]["Volume"].iloc[-20:].mean())
-                        cum_vol = float(s_df["Volume"].sum())
-                        vol_ratio = cum_vol / (avg_vol * (len(s_df) / 78)) if avg_vol > 0 else 1.0
-                        if len(data_daily[sym]) >= 50:
-                            d_ma50 = float(data_daily[sym]["Close"].rolling(50).mean().iloc[-1])
+                    if not np.isnan(latest_sp):
+                        has_valid_data = True
+                        vol_ratio = 1.0
+                        d_ma50 = c_p
+                        if sym in data_daily and len(data_daily[sym]) >= 5:
+                            avg_vol = float(data_daily[sym]["Volume"].iloc[-20:].mean())
+                            cum_vol = float(s_df["Volume"].sum())
+                            vol_ratio = cum_vol / (avg_vol * (len(s_df) / 78)) if avg_vol > 0 else 1.0
+                            if len(data_daily[sym]) >= 50:
+                                d_ma50 = float(data_daily[sym]["Close"].rolling(50).mean().iloc[-1])
 
-                    # 周线关键低点事实 (PWL)
-                    pwl_val = c_p * 0.95
-                    if sym in data_weekly and len(data_weekly[sym]) >= 2:
-                        pwl_val = float(data_weekly[sym]["Low"].iloc[-2])
+                        pwl_val = c_p * 0.95
+                        if sym in data_weekly and len(data_weekly[sym]) >= 2:
+                            pwl_val = float(data_weekly[sym]["Low"].iloc[-2])
 
-                    # 阵营加权归集
-                    if cfg["tier"] == "巨头":
-                        t1_series_list.append(spread * w)
-                        t1_weights.append(w)
-                    else:
-                        t2_series_list.append(spread * w)
-                        t2_weights.append(w)
+                        if cfg["tier"] == "巨头":
+                            t1_series_list.append(spread * w)
+                            t1_weights.append(w)
+                        else:
+                            t2_series_list.append(spread * w)
+                            t2_weights.append(w)
 
-                    if latest_sp >= 0:
-                        above_qqq_count += 1
-                    total_active += 1
+                        if latest_sp >= 0:
+                            above_qqq_count += 1
+                        total_active += 1
 
-                    # 3. 整合第二点：严谨客观动作判定 (触及日周支撑 + 2B / 放量验证)
-                    is_near_pwl = (c_p <= pwl_val * 1.015)
-                    if latest_sp >= 0.2 and vol_ratio >= 1.25:
-                        action_tag = "🟢 放量水上 (领跑突破)"
-                        structure_pos = "突破拉升区"
-                    elif latest_sp <= -0.5 and vol_ratio >= 1.5:
-                        action_tag = "🔴 坚决离场 (放量砸盘)"
-                        structure_pos = "破位出逃区"
-                    elif is_near_pwl and vol_ratio < 0.9:
-                        action_tag = "⚠️ 触及周线支撑 (等2B扫损企稳)"
-                        structure_pos = f"PWL周线底 (${pwl_val:.2f})"
-                    elif c_p <= d_ma50 * 1.01 and c_p >= d_ma50 * 0.99:
-                        action_tag = "⚠️ 回踩日线MA50 (观察企稳)"
-                        structure_pos = f"日MA50成本区 (${d_ma50:.2f})"
-                    else:
-                        action_tag = "⚪ 缩量观望 (常态整理)"
-                        structure_pos = "中继震荡区"
+                        is_near_pwl = (c_p <= pwl_val * 1.015)
+                        if latest_sp >= 0.2 and vol_ratio >= 1.25:
+                            action_tag = "🟢 放量水上 (领跑突破)"
+                            structure_pos = "突破拉升区"
+                        elif latest_sp <= -0.5 and vol_ratio >= 1.5:
+                            action_tag = "🔴 坚决离场 (放量砸盘)"
+                            structure_pos = "破位出逃区"
+                        elif is_near_pwl and vol_ratio < 0.9:
+                            action_tag = "⚠️ 触及周线支撑 (等2B扫损)"
+                            structure_pos = f"PWL周线底 (${pwl_val:.2f})"
+                        elif c_p <= d_ma50 * 1.01 and c_p >= d_ma50 * 0.99:
+                            action_tag = "⚠️ 回踩日线MA50 (观察企稳)"
+                            structure_pos = f"日MA50 (${d_ma50:.2f})"
+                        else:
+                            action_tag = "⚪ 缩量观望 (常态整理)"
+                            structure_pos = "中继震荡区"
 
-                    facts_table.append({
-                        "Ticker": sym,
-                        "Name": cfg["name"],
-                        "Tier": cfg["tier"],
-                        "Weight": f"{w:.1f}x",
-                        "Price": round(c_p, 2),
-                        "ChangePct": round(chg, 2),
-                        "SpreadVsQQQ": round(latest_sp, 2),
-                        "VolumeRatio": round(vol_ratio, 2),
-                        "Structure": structure_pos,
-                        "ActionTag": action_tag
-                    })
-                    continue
+                        facts_table.append({
+                            "Ticker": sym,
+                            "Name": cfg["name"],
+                            "Tier": cfg["tier"],
+                            "Weight": f"{w:.1f}x",
+                            "Price": round(c_p, 2),
+                            "ChangePct": round(chg, 2),
+                            "SpreadVsQQQ": round(latest_sp, 2),
+                            "VolumeRatio": round(vol_ratio, 2),
+                            "Structure": structure_pos,
+                            "ActionTag": action_tag
+                        })
 
-        # 离线标的安全占位
-        facts_table.append({
-            "Ticker": sym,
-            "Name": cfg["name"],
-            "Tier": cfg["tier"],
-            "Weight": f"{w:.1f}x",
-            "Price": 0.0,
-            "ChangePct": 0.0,
-            "SpreadVsQQQ": 0.0,
-            "VolumeRatio": 0.0,
-            "Structure": "待同步",
-            "ActionTag": "⚪ 离线观望"
-        })
+        if not has_valid_data:
+            # 严格置零防 NaN 污染
+            facts_table.append({
+                "Ticker": sym,
+                "Name": cfg["name"],
+                "Tier": cfg["tier"],
+                "Weight": f"{w:.1f}x",
+                "Price": 0.0,
+                "ChangePct": 0.0,
+                "SpreadVsQQQ": 0.0,
+                "VolumeRatio": 0.0,
+                "Structure": "数据同步中",
+                "ActionTag": "⚪ 待同步"
+            })
 
-    # 市值加权平均曲线
     t1_wave = (pd.concat(t1_series_list, axis=1).sum(axis=1) / sum(t1_weights)).dropna() if t1_series_list else pd.Series(dtype=float)
     t2_wave = (pd.concat(t2_series_list, axis=1).sum(axis=1) / sum(t2_weights)).dropna() if t2_series_list else pd.Series(dtype=float)
+
+    df_clean = pd.DataFrame(facts_table)
+    df_clean["SpreadVsQQQ"] = pd.to_numeric(df_clean["SpreadVsQQQ"], errors="coerce").fillna(0.0)
+    df_clean["VolumeRatio"] = pd.to_numeric(df_clean["VolumeRatio"], errors="coerce").fillna(0.0)
 
     return {
         "timestamp_ny": latest_ts_ny.strftime("%Y-%m-%d %H:%M ET"),
@@ -216,7 +256,7 @@ def compute_radar_facts_integrated(data_5m, data_daily, data_weekly):
         "atr_1d_val": atr_1d_val,
         "t1_wave": t1_wave,
         "t2_wave": t2_wave,
-        "df_facts": pd.DataFrame(facts_table).fillna(0.0)
+        "df_facts": df_clean
     }
 
 
@@ -227,7 +267,6 @@ def generate_facts_markdown(res):
     atr_used = res["atr_used_pct"]
     pct_above = (res["above_count"] / res["total_active"] * 100)
 
-    # 宏观定调事实推导
     if atr_used >= 110:
         macro_verdict = "🚨 日内波动率已透支 (ATR Used ≥ 110%) | 动能耗尽，严禁追单，建议空仓防守"
     elif t2_latest > t1_latest and t2_latest > 0 and pct_above >= 60:
@@ -269,11 +308,11 @@ def generate_facts_markdown(res):
 def render_macro_radar_tab():
     st.subheader("📡 QQQ 宏观雷达 · 13 核心标的事实穿透看板 (加权与大级别版)")
 
-    if st.button("🔄 刷新最新宏观事实", key="btn_refresh_radar_final_v2"):
+    if st.button("🔄 刷新最新宏观事实", key="btn_refresh_radar_final_v3"):
         st.cache_data.clear()
         st.rerun()
 
-    with st.spinner("正在提取 13 核心标的加权分时与日周结构数据..."):
+    with st.spinner("正在提取 13 核心标的加权分时与日周结构数据 (含 Tiingo 数据通道)..."):
         d_5m, d_1d, d_1w = fetch_radar_data_advanced()
 
     res = compute_radar_facts_integrated(d_5m, d_1d, d_1w)
@@ -286,7 +325,7 @@ def render_macro_radar_tab():
     pct_above = (res["above_count"] / res["total_active"] * 100) if res["total_active"] > 0 else 0
     atr_used = res["atr_used_pct"]
 
-    # 1. 顶部指标卡：新增 ATR 波动消耗事实
+    # 1. 顶部指标卡
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("🎯 QQQ 基准现价", f"${res['qqq_curr']:.2f}", f"{res['qqq_chg']:+.2f}%")
     k2.metric("🔋 日内 ATR 波幅消耗", f"{atr_used:.1f}%", "🚨 空间耗尽/防追单" if atr_used >= 100 else "动能充沛")
@@ -369,7 +408,7 @@ def render_macro_radar_tab():
 
     st.markdown("---")
 
-    # 4. 标准 Markdown 导出区 (一键复制给 AI)
+    # 4. 标准 Markdown 导出区
     st.markdown("#### 🤖 AI 深度分析数据包 (点击右上角一键复制)")
     ai_md = generate_facts_markdown(res)
     st.code(ai_md, language="markdown")
