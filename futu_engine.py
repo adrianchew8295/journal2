@@ -1,5 +1,5 @@
 # 文件名: futu_engine.py
-# 作用: 13 行战区参数抽取与彻底解绑 LWMA20 的 5M 机械回测引擎 (结构止损 / 1:2 止盈)
+# 作用: 13 行战区参数抽取与解绑 2B 排他的 5M 机械回测引擎 (2B 与 CALL/PUT 并行识别)
 
 import datetime
 from datetime import timedelta
@@ -12,7 +12,6 @@ tz_ny = pytz.timezone("America/New_York")
 
 
 def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
-    """计算 13 行关键战区点位"""
     try:
         if df_1h is None:
             return None
@@ -108,9 +107,6 @@ def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
 
 
 def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
-    """
-    100% 对齐富途指标（移除 LWMA20 均线过滤 · 释放标准吞没/星线 · 严格 TREND_BIAS 门禁）
-    """
     trades = []
     try:
         if p is None or df_5m is None:
@@ -133,14 +129,16 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         pml_line, pmh_line = p["PML"], p["PMH"]
         bias = p["TREND_BIAS"]
 
-        # 战区准入
-        in_rbs1 = (day_5m["Low"] <= rbs_top) & (day_5m["Close"] >= rbs_bot)
-        in_rbs2 = (rbs2_top > 0) & (day_5m["Low"] <= rbs2_top) & (day_5m["Close"] >= rbs2_bot)
-        in_sbr1 = (day_5m["High"] >= sbr_bot) & (day_5m["Close"] <= sbr_top)
-        in_sbr2 = (sbr2_top > 0) & (day_5m["High"] >= sbr2_bot) & (day_5m["Close"] <= sbr2_top)
+        # 增加 0.2 ATR 容差
+        atr_buf = day_5m["ATR14"] * 0.2
 
-        buy_zone = in_rbs1 | in_rbs2 | ((day_5m["Low"] <= pdl_line) & (day_5m["Close"] > pdl_line)) | ((day_5m["Low"] <= pml_line) & (day_5m["Close"] > pml_line))
-        sell_zone = in_sbr1 | in_sbr2 | ((day_5m["High"] >= pdh_line) & (day_5m["Close"] < pdh_line)) | ((day_5m["High"] >= pmh_line) & (day_5m["Close"] < pmh_line))
+        in_rbs1 = (day_5m["Low"] <= rbs_top + atr_buf) & (day_5m["Close"] >= rbs_bot - atr_buf)
+        in_rbs2 = (rbs2_top > 0) & (day_5m["Low"] <= rbs2_top + atr_buf) & (day_5m["Close"] >= rbs2_bot - atr_buf)
+        in_sbr1 = (day_5m["High"] >= sbr_bot - atr_buf) & (day_5m["Close"] <= sbr_top + atr_buf)
+        in_sbr2 = (sbr2_top > 0) & (day_5m["High"] >= sbr2_bot - atr_buf) & (day_5m["Close"] <= sbr2_top + atr_buf)
+
+        buy_zone = in_rbs1 | in_rbs2 | ((day_5m["Low"] <= pdl_line + atr_buf) & (day_5m["Close"] > pdl_line)) | ((day_5m["Low"] <= pml_line + atr_buf) & (day_5m["Close"] > pml_line))
+        sell_zone = in_sbr1 | in_sbr2 | ((day_5m["High"] >= pdh_line - atr_buf) & (day_5m["Close"] < pdh_line)) | ((day_5m["High"] >= pmh_line - atr_buf) & (day_5m["Close"] < pmh_line))
 
         llv5_ref1 = day_5m["Low"].rolling(5).min().shift(1)
         hhv5_ref1 = day_5m["High"].rolling(5).max().shift(1)
@@ -149,7 +147,7 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         bull_2b_raw = ((day_5m["Low"] < llv5_ref1) | (day_5m["Low"] < pdl_line) | (day_5m["Low"] < pml_line)) & (day_5m["Close"] > llv5_ref1) & (day_5m["Close"] > day_5m["Open"])
         bear_2b_raw = ((day_5m["High"] > hhv5_ref1) | (day_5m["High"] > pdh_line) | (day_5m["High"] > pmh_line)) & (day_5m["Close"] < hhv5_ref1) & (day_5m["Close"] < day_5m["Open"])
 
-        # 2. 标准战区形态 (吞没 + 启明星/黄昏星，无 LWMA20 限制)
+        # 2. 战区形态 (吞没 + 星线，无均线限制)
         bull_engulf_raw = buy_zone & (day_5m["Close"] > day_5m["Open"]) & (day_5m["Close"].shift(1) < day_5m["Open"].shift(1)) & (day_5m["Close"] >= day_5m["Open"].shift(1)) & (day_5m["Open"] <= day_5m["Close"].shift(1))
         bear_engulf_raw = sell_zone & (day_5m["Close"] < day_5m["Open"]) & (day_5m["Close"].shift(1) > day_5m["Open"].shift(1)) & (day_5m["Close"] <= day_5m["Open"].shift(1)) & (day_5m["Open"] >= day_5m["Close"].shift(1))
 
@@ -161,18 +159,17 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
 
         vol_heavy_or_ref1 = day_5m["VOL_HEAVY"] | day_5m["VOL_HEAVY"].shift(1)
 
-        # 二次放量确认
         buy_2b_confirmed = bull_2b_raw.shift(1) & (day_5m["High"] > day_5m["High"].shift(1)) & (day_5m["Close"] > day_5m["Open"]) & vol_heavy_or_ref1
         sell_2b_confirmed = bear_2b_raw.shift(1) & (day_5m["Low"] < day_5m["Low"].shift(1)) & (day_5m["Close"] < day_5m["Open"]) & vol_heavy_or_ref1
 
         buy_std_confirmed = std_buy_setup.shift(1) & (day_5m["High"] > day_5m["High"].shift(1)) & (day_5m["Close"] > day_5m["Open"]) & vol_heavy_or_ref1
         sell_std_confirmed = std_sell_setup.shift(1) & (day_5m["Low"] < day_5m["Low"].shift(1)) & (day_5m["Close"] < day_5m["Open"]) & vol_heavy_or_ref1
 
-        # 严格门禁：BIAS > 0 做多，BIAS < 0 做空，BIAS == 0 锁死；2B 优先，STD 随后
+        # 彻底移除排他 (~2B) 限制：2B 与 CALL/PUT 各自独立并存判定
         day_5m["BUY_2B_SIG"] = (bias > 0) & buy_2b_confirmed & (buy_2b_confirmed.rolling(5).sum() == 1)
         day_5m["SELL_2B_SIG"] = (bias < 0) & sell_2b_confirmed & (sell_2b_confirmed.rolling(5).sum() == 1)
-        day_5m["BUY_STD_SIG"] = (bias > 0) & buy_std_confirmed & (buy_std_confirmed.rolling(5).sum() == 1) & (~day_5m["BUY_2B_SIG"])
-        day_5m["SELL_STD_SIG"] = (bias < 0) & sell_std_confirmed & (sell_std_confirmed.rolling(5).sum() == 1) & (~day_5m["SELL_2B_SIG"])
+        day_5m["BUY_STD_SIG"] = (bias > 0) & buy_std_confirmed & (buy_std_confirmed.rolling(5).sum() == 1)
+        day_5m["SELL_STD_SIG"] = (bias < 0) & sell_std_confirmed & (sell_std_confirmed.rolling(5).sum() == 1)
 
         in_pos, pos_type = False, 0
         entry_p, sl_p, tp_p = 0.0, 0.0, 0.0
@@ -245,14 +242,24 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
                     sl_p = l - 0.5 * atr_v
                     tp_p = c + 2.0 * (c - sl_p)
                     entry_time_ny = cur_t_ny
-                    futu_signal_tag = "▲▲ 2B 多" if is_b2b else "▲ CALL 多"
+                    if is_b2b and is_bstd:
+                        futu_signal_tag = "▲▲ 2B+CALL 多"
+                    elif is_b2b:
+                        futu_signal_tag = "▲▲ 2B 多"
+                    else:
+                        futu_signal_tag = "▲ CALL 多"
                 elif is_s2b or is_sstd:
                     in_pos, pos_type = True, -1
                     entry_p = c
                     sl_p = h + 0.5 * atr_v
                     tp_p = c - 2.0 * (sl_p - c)
                     entry_time_ny = cur_t_ny
-                    futu_signal_tag = "▼▼ 2B 空" if is_s2b else "▼ PUT 空"
+                    if is_s2b and is_sstd:
+                        futu_signal_tag = "▼▼ 2B+PUT 空"
+                    elif is_s2b:
+                        futu_signal_tag = "▼▼ 2B 空"
+                    else:
+                        futu_signal_tag = "▼ PUT 空"
 
         return trades, day_5m
     except Exception as e:
