@@ -1,5 +1,6 @@
-# 文件名：futu_engine.py
-# 作用：富途 13 行参数抽取与 100% 对齐指标的 5M 回测引擎 (仅限 22:00-24:00 窗口内，支持窗口内多次交易)
+# 文件名: futu_engine.py
+# 作用: 13 行战区参数抽取与彻底解绑 LWMA20 的 5M 机械回测引擎 (结构止损 / 1:2 止盈)
+
 import datetime
 from datetime import timedelta
 import numpy as np
@@ -9,14 +10,15 @@ import pytz
 tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 tz_ny = pytz.timezone("America/New_York")
 
+
 def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
-    """
-    计算富途牛牛 13 行战区参数
-    """
+    """计算 13 行关键战区点位"""
     try:
-        if df_1h is None: return None
+        if df_1h is None:
+            return None
         sub_1h = df_1h[df_1h.index <= as_of_ny_time].copy()
-        if len(sub_1h) < 25: return None
+        if len(sub_1h) < 25:
+            return None
 
         today_ny = as_of_ny_time.date()
         df_rth = sub_1h[(sub_1h.index.hour > 9) | ((sub_1h.index.hour == 9) & (sub_1h.index.minute >= 30))]
@@ -55,8 +57,10 @@ def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
 
         pivots_high, pivots_low = [], []
         for i in range(2, len(subset) - 2):
-            if highs[i] == max(highs[i-2:i+3]): pivots_high.append((float(highs[i]), float(max(opens[i], closes[i])), times[i].strftime("%m-%d %H:%M ET")))
-            if lows[i] == min(lows[i-2:i+3]): pivots_low.append((float(min(opens[i], closes[i])), float(lows[i]), times[i].strftime("%m-%d %H:%M ET")))
+            if highs[i] == max(highs[i-2:i+3]):
+                pivots_high.append((float(highs[i]), float(max(opens[i], closes[i])), times[i].strftime("%m-%d %H:%M ET")))
+            if lows[i] == min(lows[i-2:i+3]):
+                pivots_low.append((float(min(opens[i], closes[i])), float(lows[i]), times[i].strftime("%m-%d %H:%M ET")))
 
         valid_highs = [p for p in pivots_high if p[0] > live_price]
         valid_highs.sort(key=lambda x: x[0])
@@ -75,8 +79,10 @@ def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
         score_hhll = 0
         if len(pivots_high) >= 2 and len(pivots_low) >= 2:
             last_2_h, last_2_l = [p[0] for p in pivots_high[-2:]], [p[1] for p in pivots_low[-2:]]
-            if last_2_h[1] > last_2_h[0] and last_2_l[1] > last_2_l[0]: score_hhll = 1
-            elif last_2_h[1] < last_2_h[0] and last_2_l[1] < last_2_l[0]: score_hhll = -1
+            if last_2_h[1] > last_2_h[0] and last_2_l[1] > last_2_l[0]:
+                score_hhll = 1
+            elif last_2_h[1] < last_2_h[0] and last_2_l[1] < last_2_l[0]:
+                score_hhll = -1
 
         ema20_prev = float(sub_1h["EMA20"].iloc[-5])
         ema_slope = (ema20_now - ema20_prev) / ema20_prev * 100
@@ -94,29 +100,26 @@ def compute_futu_13_params(df_1h, df_5m, as_of_ny_time):
             "SBR2_TOP": sbr2_top, "SBR2_BOT": sbr2_bot, "SBR2_TIME": sbr2_time,
             "RBS2_TOP": rbs2_top, "RBS2_BOT": rbs2_bot, "RBS2_TIME": rbs2_time,
             "PDH": pdh_val, "PDH_TIME": pdh_time, "PDL": pdl_val, "PDL_TIME": pdl_time,
-            "PMH": pmh_val, "PMH_TIME": pmh_time, "PML": pml_val, "PML_TIME": pml_time
+            "PMH": pmh_val, "PMH_TIME": pmh_time, "PML": pml_val, "PML_TIME": pml_time,
         }
     except Exception as e:
         print(f"计算战区参数发生异常: {str(e)}")
         return None
 
+
 def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
     """
-    100% 对齐富途指标：
-    1. 严格只在 22:00 - 24:00 MYT (美东 10:00 - 12:00) 窗口内开仓
-    2. 窗口期内平仓后，若再出信号允许继续交易（不限制只做 1 笔）
-    3. 24:00 强制清仓离场
+    100% 对齐富途指标（移除 LWMA20 均线过滤 · 释放标准吞没/星线 · 严格 TREND_BIAS 门禁）
     """
     trades = []
     try:
-        if p is None or df_5m is None: return trades, None
+        if p is None or df_5m is None:
+            return trades, None
 
         day_5m = df_5m[(df_5m.index >= start_cutoff_ny - timedelta(hours=3)) & (df_5m.index <= window_end_ny + timedelta(minutes=15))].copy()
-        if len(day_5m) < 25: return trades, None
+        if len(day_5m) < 25:
+            return trades, None
 
-        weights = np.arange(1, 21)
-        day_5m["LWMA20"] = day_5m["Close"].rolling(20).apply(lambda prices: np.dot(prices, weights) / weights.sum(), raw=True)
-        
         tr = np.maximum(day_5m["High"] - day_5m["Low"], np.maximum((day_5m["High"] - day_5m["Close"].shift(1)).abs(), (day_5m["Low"] - day_5m["Close"].shift(1)).abs()))
         day_5m["ATR14"] = tr.rolling(14).mean()
         day_5m["VOL_MA"] = day_5m["Volume"].rolling(20).mean()
@@ -130,6 +133,7 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         pml_line, pmh_line = p["PML"], p["PMH"]
         bias = p["TREND_BIAS"]
 
+        # 战区准入
         in_rbs1 = (day_5m["Low"] <= rbs_top) & (day_5m["Close"] >= rbs_bot)
         in_rbs2 = (rbs2_top > 0) & (day_5m["Low"] <= rbs2_top) & (day_5m["Close"] >= rbs2_bot)
         in_sbr1 = (day_5m["High"] >= sbr_bot) & (day_5m["Close"] <= sbr_top)
@@ -141,30 +145,30 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         llv5_ref1 = day_5m["Low"].rolling(5).min().shift(1)
         hhv5_ref1 = day_5m["High"].rolling(5).max().shift(1)
 
+        # 1. 2B 假突破
         bull_2b_raw = ((day_5m["Low"] < llv5_ref1) | (day_5m["Low"] < pdl_line) | (day_5m["Low"] < pml_line)) & (day_5m["Close"] > llv5_ref1) & (day_5m["Close"] > day_5m["Open"])
         bear_2b_raw = ((day_5m["High"] > hhv5_ref1) | (day_5m["High"] > pdh_line) | (day_5m["High"] > pmh_line)) & (day_5m["Close"] < hhv5_ref1) & (day_5m["Close"] < day_5m["Open"])
 
+        # 2. 标准战区形态 (吞没 + 启明星/黄昏星，无 LWMA20 限制)
         bull_engulf_raw = buy_zone & (day_5m["Close"] > day_5m["Open"]) & (day_5m["Close"].shift(1) < day_5m["Open"].shift(1)) & (day_5m["Close"] >= day_5m["Open"].shift(1)) & (day_5m["Open"] <= day_5m["Close"].shift(1))
         bear_engulf_raw = sell_zone & (day_5m["Close"] < day_5m["Open"]) & (day_5m["Close"].shift(1) > day_5m["Open"].shift(1)) & (day_5m["Close"] <= day_5m["Open"].shift(1)) & (day_5m["Open"] >= day_5m["Close"].shift(1))
 
         bull_star_raw = buy_zone & (day_5m["Close"].shift(2) < day_5m["Open"].shift(2)) & ((day_5m["Close"].shift(1) - day_5m["Open"].shift(1)).abs() <= 0.35 * (day_5m["High"].shift(1) - day_5m["Low"].shift(1))) & (day_5m["Close"] > day_5m["Open"]) & (day_5m["Close"] >= (day_5m["Open"].shift(2) + day_5m["Close"].shift(2)) / 2)
         bear_star_raw = sell_zone & (day_5m["Close"].shift(2) > day_5m["Open"].shift(2)) & ((day_5m["Close"].shift(1) - day_5m["Open"].shift(1)).abs() <= 0.35 * (day_5m["High"].shift(1) - day_5m["Low"].shift(1))) & (day_5m["Close"] < day_5m["Open"]) & (day_5m["Close"] <= (day_5m["Open"].shift(2) + day_5m["Close"].shift(2)) / 2)
 
-        bull_123_raw = buy_zone & (day_5m["Close"] > day_5m["LWMA20"]) & (day_5m["Close"].shift(1) <= day_5m["LWMA20"].shift(1)) & (day_5m["Low"] > llv5_ref1) & (day_5m["Close"] > day_5m["Open"])
-        bear_123_raw = sell_zone & (day_5m["Close"] < day_5m["LWMA20"]) & (day_5m["Close"].shift(1) >= day_5m["LWMA20"].shift(1)) & (day_5m["High"] < hhv5_ref1) & (day_5m["Close"] < day_5m["Open"])
-
-        std_buy_setup = bull_engulf_raw | bull_star_raw | bull_123_raw
-        std_sell_setup = bear_engulf_raw | bear_star_raw | bear_123_raw
+        std_buy_setup = bull_engulf_raw | bull_star_raw
+        std_sell_setup = bear_engulf_raw | bear_star_raw
 
         vol_heavy_or_ref1 = day_5m["VOL_HEAVY"] | day_5m["VOL_HEAVY"].shift(1)
-        
+
+        # 二次放量确认
         buy_2b_confirmed = bull_2b_raw.shift(1) & (day_5m["High"] > day_5m["High"].shift(1)) & (day_5m["Close"] > day_5m["Open"]) & vol_heavy_or_ref1
         sell_2b_confirmed = bear_2b_raw.shift(1) & (day_5m["Low"] < day_5m["Low"].shift(1)) & (day_5m["Close"] < day_5m["Open"]) & vol_heavy_or_ref1
 
-        buy_std_confirmed = std_buy_setup.shift(1) & (day_5m["High"] > day_5m["High"].shift(1)) & (day_5m["Close"] > day_5m["Open"]) & (day_5m["Close"] > day_5m["LWMA20"]) & vol_heavy_or_ref1
-        sell_std_confirmed = std_sell_setup.shift(1) & (day_5m["Low"] < day_5m["Low"].shift(1)) & (day_5m["Close"] < day_5m["Open"]) & (day_5m["Close"] < day_5m["LWMA20"]) & vol_heavy_or_ref1
+        buy_std_confirmed = std_buy_setup.shift(1) & (day_5m["High"] > day_5m["High"].shift(1)) & (day_5m["Close"] > day_5m["Open"]) & vol_heavy_or_ref1
+        sell_std_confirmed = std_sell_setup.shift(1) & (day_5m["Low"] < day_5m["Low"].shift(1)) & (day_5m["Close"] < day_5m["Open"]) & vol_heavy_or_ref1
 
-        # 门禁：严格 > 0 与 < 0 (Bias=0 严格锁死)
+        # 严格门禁：BIAS > 0 做多，BIAS < 0 做空，BIAS == 0 锁死；2B 优先，STD 随后
         day_5m["BUY_2B_SIG"] = (bias > 0) & buy_2b_confirmed & (buy_2b_confirmed.rolling(5).sum() == 1)
         day_5m["SELL_2B_SIG"] = (bias < 0) & sell_2b_confirmed & (sell_2b_confirmed.rolling(5).sum() == 1)
         day_5m["BUY_STD_SIG"] = (bias > 0) & buy_std_confirmed & (buy_std_confirmed.rolling(5).sum() == 1) & (~day_5m["BUY_2B_SIG"])
@@ -173,6 +177,7 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
         in_pos, pos_type = False, 0
         entry_p, sl_p, tp_p = 0.0, 0.0, 0.0
         entry_time_ny = None
+        daily_trade_count = 0
         futu_signal_tag = ""
 
         start_idx = 0
@@ -181,42 +186,54 @@ def simulate_trades_with_2b(df_5m, p, start_cutoff_ny, window_end_ny):
                 start_idx = idx_i
                 break
 
-        # 遍历 22:00 - 24:00 (MYT) 窗口内的每一根 K 线
         for i in range(start_idx, len(day_5m)):
             cur_t_ny = day_5m.index[i]
             c, h, l = day_5m["Close"].iloc[i], day_5m["High"].iloc[i], day_5m["Low"].iloc[i]
             atr_v = day_5m["ATR14"].iloc[i] if not np.isnan(day_5m["ATR14"].iloc[i]) else 0.8
             is_window_close = (cur_t_ny >= window_end_ny - timedelta(minutes=5))
 
-            # 持仓中的平仓监控
             if in_pos:
                 exit_flag, reason, exit_p = False, "", 0.0
                 exit_time_ny = cur_t_ny
-                
+
                 if pos_type == 1:
-                    if is_window_close: exit_flag, reason, exit_p = True, "24:00 纪律清仓", c
-                    elif l <= sl_p: exit_flag, reason, exit_p = True, "SL (结构止损)", sl_p
-                    elif h >= tp_p: exit_flag, reason, exit_p = True, "TP (1:2 止盈)", tp_p
+                    if is_window_close:
+                        exit_flag, reason, exit_p = True, "24:00 纪律清仓", c
+                    elif l <= sl_p:
+                        exit_flag, reason, exit_p = True, "SL (结构止损)", sl_p
+                    elif h >= tp_p:
+                        exit_flag, reason, exit_p = True, "TP (1:2 止盈)", tp_p
                 elif pos_type == -1:
-                    if is_window_close: exit_flag, reason, exit_p = True, "24:00 纪律清仓", c
-                    elif h >= sl_p: exit_flag, reason, exit_p = True, "SL (结构止损)", sl_p
-                    elif l <= tp_p: exit_flag, reason, exit_p = True, "TP (1:2 止盈)", tp_p
+                    if is_window_close:
+                        exit_flag, reason, exit_p = True, "24:00 纪律清仓", c
+                    elif h >= sl_p:
+                        exit_flag, reason, exit_p = True, "SL (结构止损)", sl_p
+                    elif l <= tp_p:
+                        exit_flag, reason, exit_p = True, "TP (1:2 止盈)", tp_p
 
                 if exit_flag:
                     pnl = (exit_p - entry_p) if pos_type == 1 else (entry_p - exit_p)
                     trades.append({
                         "Signal": futu_signal_tag,
-                        "Entry_MYT": entry_time_ny.astimezone(tz_myt).strftime("%H:%M"), "Entry_ET": entry_time_ny.strftime("%H:%M"),
-                        "Exit_MYT": exit_time_ny.astimezone(tz_myt).strftime("%H:%M"), "Exit_ET": exit_time_ny.strftime("%H:%M"),
-                        "Entry_Price": round(entry_p, 2), "Exit_Price": round(exit_p, 2),
-                        "SL": round(sl_p, 2), "TP": round(tp_p, 2), "PnL_Points": round(pnl, 2),
-                        "Reason": reason, "Result": "盈利" if pnl > 0 else ("保本" if pnl == 0 else "亏损"),
-                        "Entry_DT_NY": entry_time_ny, "Exit_DT_NY": exit_time_ny
+                        "Entry_MYT": entry_time_ny.astimezone(tz_myt).strftime("%H:%M"),
+                        "Entry_ET": entry_time_ny.strftime("%H:%M"),
+                        "Exit_MYT": exit_time_ny.astimezone(tz_myt).strftime("%H:%M"),
+                        "Exit_ET": exit_time_ny.strftime("%H:%M"),
+                        "Entry_Price": round(entry_p, 2),
+                        "Exit_Price": round(exit_p, 2),
+                        "SL": round(sl_p, 2),
+                        "TP": round(tp_p, 2),
+                        "PnL_Points": round(pnl, 2),
+                        "Reason": reason,
+                        "Result": "盈利" if pnl > 0 else ("保本" if pnl == 0 else "亏损"),
+                        "Entry_DT_NY": entry_time_ny,
+                        "Exit_DT_NY": exit_time_ny,
                     })
-                    in_pos = False  # 平仓，重置为空仓状态
+                    in_pos = False
+                    daily_trade_count += 1
+                    break
 
-            # 空仓时开仓监控：只要当前处于 22:00 - 23:45 窗口内，出信号就开仓 (支持多次交易)
-            if not in_pos and cur_t_ny < (window_end_ny - timedelta(minutes=15)):
+            if not in_pos and daily_trade_count == 0 and cur_t_ny < (window_end_ny - timedelta(minutes=15)):
                 is_b2b = bool(day_5m["BUY_2B_SIG"].iloc[i])
                 is_s2b = bool(day_5m["SELL_2B_SIG"].iloc[i])
                 is_bstd = bool(day_5m["BUY_STD_SIG"].iloc[i])
