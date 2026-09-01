@@ -1,5 +1,5 @@
 # 文件名: app.py
-# 作用: 旗舰级 QQQ 战区座舱 (Tab 3 纯 5 交易日宽屏月历 + 右侧战术纪律看板 + 13行历史明细)
+# 作用: 旗舰级 QQQ 战区座舱 (白天天随时算/随时看 + 22:00 后台标准结算 + Tab 3 宽屏月历/纪律看板/13行明细)
 
 import calendar
 import datetime
@@ -32,7 +32,7 @@ st.title("🎯 QQQ 战区与 2B 同频座舱")
 
 # 顶部状态导航
 s1, s2, s3, s4 = st.columns(4)
-s1.success("✅ 10:00 PM 战区引擎已就绪" if has_10pm_p else "⏳ 10:00 PM 战区引擎等待中")
+s1.success("✅ 10:00 PM 战区引擎已就绪" if has_10pm_p else "⏳ 10:00 PM 战区引擎等待中 (后台)")
 s2.success(f"✅ 昨夜战报已交付 ({yesterday_myt_str})" if has_8am_report else f"⏳ 昨夜战报待更新 ({yesterday_myt_str})")
 s3.info("🎯 纪律窗口：22:00 - 24:00 (MYT) | 0.5 ATR 止损 / 1:2 TP")
 
@@ -56,19 +56,27 @@ tab_macro, tab_cockpit, tab_journal = st.tabs([
 with tab_macro:
     render_macro_radar_tab()
 
-# ================= TAB 2: 战区座舱 =================
+# ================= TAB 2: 战区座舱 (随时计算 & 查看最新数据) =================
 with tab_cockpit:
     st.subheader("🎯 QQQ 5M 战区座舱 (含 SBR/SBR2/RBS/RBS2 & 2B)")
     c_t1, c_t2 = st.columns(2)
     c_t1.info("🕒 大马时间 (MYT): " + now_myt.strftime("%Y-%m-%d %H:%M:%S"))
     c_t2.info("🇺🇸 美东时间 (ET): " + now_ny.strftime("%Y-%m-%d %H:%M:%S"))
 
-    if not has_10pm_p:
-        st.warning("🔒 处于日间准备期。大马时间 22:00 准时解锁并生成今晚 13 行战区代码。")
-    else:
-        if st.button("🔄 刷新最新点位", key="btn_refresh_cockpit_points"):
+    # 1. 随时刷新控制与状态提示
+    c_btn, c_stat = st.columns([1.5, 3])
+    with c_btn:
+        if st.button("🔄 随时拉取/计算当前最新点位", key="btn_refresh_cockpit_points"):
             st.cache_data.clear()
             st.rerun()
+    with c_stat:
+        if not has_10pm_p:
+            st.info("💡 当前为即时/盘前动态计算模式。22:00 将作为后台基准锚点。")
+        else:
+            st.success("✅ 22:00 战区引擎已正式就绪。")
+
+    # 2. 随时放行计算，输出当前最新 13 行代码
+    with st.spinner("正在拉取行情并计算 13 行点位..."):
         d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
         if d1h is not None:
             p = compute_futu_13_params(d1h, d5m, now_ny)
@@ -102,6 +110,10 @@ with tab_cockpit:
                 ]
                 st.markdown("#### 📋 复制到富途指标顶部 13 行代码 (点击右上角复制):")
                 st.code("\n".join(out_lines), language="pascal")
+            else:
+                st.warning("数据抓取中或 K 线不足，请稍后刷新重试。")
+        else:
+            st.error("行情接口连接失败，请检查网络或数据源。")
 
 # ================= TAB 3: 月历账本与全量深度复盘 =================
 with tab_journal:
@@ -270,7 +282,7 @@ with tab_journal:
                             </div>
                             """, unsafe_allow_html=True)
 
-    # 3. 右侧：战术看板 (原周末空位被高效利用)
+    # 3. 右侧：战术看板
     with col_cal_right:
         st.markdown("#### 🛡️ 战术纪律看板")
         
@@ -324,7 +336,7 @@ with tab_journal:
         else:
             st.info("当月暂无历史数据，请点击上方「一键回溯」生成。")
 
-    # 5. 旗舰级 5M 走势与副图 VPA 量价异动双层图表
+    # 5. 5M 走势与副图 VPA 量价双层图表
     st.markdown("---")
     active_date = st.session_state.get("active_chart_date")
     if active_date and not df_month.empty:
