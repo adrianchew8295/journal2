@@ -14,7 +14,6 @@
       --surface-card: rgba(18, 24, 38, 0.75);
       --surface-hover: rgba(255, 255, 255, 0.04);
       --border-subtle: rgba(255, 255, 255, 0.08);
-      --border-active: rgba(56, 189, 248, 0.4);
       --bull: #00E676;
       --bull-bg: rgba(0, 230, 118, 0.12);
       --bear: #FF5252;
@@ -70,7 +69,7 @@
 
     #main-deck { display: flex; flex: 1; height: calc(100vh - 42px); width: 100vw; overflow: hidden; }
     #mini-rail { width: 46px; min-width: 46px; background: #090D14; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 16px; z-index: 10; }
-    .rail-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+    .rail-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; font-size: 14px; }
     .rail-btn:hover, .rail-btn.active { color: var(--accent); background: rgba(56, 189, 248, 0.1); }
 
     #left-tactical { width: 28%; min-width: 310px; max-width: 380px; background: var(--surface-card); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; backdrop-filter: blur(16px); }
@@ -112,12 +111,13 @@
     .day-summary-banner { display: flex; align-items: center; gap: 12px; font-size: 10.5px; color: var(--text-muted); }
     .day-summary-banner b { color: var(--text-main); font-family: var(--font-mono); }
 
-    /* 专业图表画布与浮动工具条美化 */
     #chart-station { flex: 1; width: 100%; height: calc(100% - 34px); position: relative; }
+
+    /* 专业看盘浮动工具条美化 */
     .js-plotly-plot .plotly .modebar {
       top: 10px !important;
       right: 16px !important;
-      background: rgba(13, 17, 24, 0.8) !important;
+      background: rgba(13, 17, 24, 0.85) !important;
       border: 1px solid rgba(255,255,255,0.1) !important;
       border-radius: 4px !important;
       padding: 2px 4px !important;
@@ -137,7 +137,6 @@
     .btn-close { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 4px; }
     .drawer-actions { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.25); display: flex; gap: 8px; }
     .btn-copy-all { flex: 1; padding: 7px 12px; background: linear-gradient(135deg, #0284c7, #4f46e5); border: none; border-radius: 4px; color: #fff; font-weight: 600; font-size: 11px; cursor: pointer; }
-    .btn-toggle-state { padding: 7px 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-muted); font-size: 10.5px; cursor: pointer; }
     .drawer-body { flex: 1; padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
     .prompt-block { background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; color: #cbd5e1; }
     .prompt-block-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 700; font-size: 10.5px; color: var(--text-muted); }
@@ -216,7 +215,7 @@
       <main id="right-workspace">
         <div id="track-strip">
           <div class="weekday-pills">
-            <div class="day-pill"><span class="name">MON</span> <span class="pnl-pos">+1.80 pt</span></div>
+            <div class="day-pill"><span class="name">MON</span> <span class="pnl-pos" id="pill-mon">+1.80 pt</span></div>
             <div class="day-pill active"><span class="name" id="pill-day-name">TUE</span> <span class="pnl-pos" id="pill-day-pnl">+2.40 pt</span></div>
             <div class="day-pill"><span class="name">WED</span> <span class="pnl-flat">⚪ 纪律空仓</span></div>
             <div class="day-pill"><span class="name">THU</span> <span class="pnl-neg">-0.90 pt</span></div>
@@ -240,7 +239,6 @@
       </div>
       <div class="drawer-actions">
         <button class="btn-copy-all" onclick="copyAIPrompt()">1-CLICK COPY FOR LLM</button>
-        <button class="btn-toggle-state" onclick="toggleReviewState()">Toggle State: <b id="state-label">Completed</b></button>
       </div>
       <div class="drawer-body">
         <div class="prompt-block">
@@ -331,13 +329,6 @@
       if (drawer.classList.contains('open')) updateAIDrawerContent();
     }
 
-    function toggleReviewState() {
-      terminalState.review.is_completed = !terminalState.review.is_completed;
-      terminalState.review.current_bars = terminalState.review.is_completed ? 48 : 42;
-      document.getElementById('state-label').innerText = terminalState.review.is_completed ? 'Completed' : 'Computing (42/48)';
-      updateAIDrawerContent();
-    }
-
     function copyAIPrompt() {
       const p1 = document.getElementById('prompt-section-macro').innerText;
       const p2 = document.getElementById('prompt-section-review').innerText;
@@ -368,37 +359,20 @@
     });
 
     // -------------------------------------------------------------
-    // 专业 TradingView 级交互式双层 Plotly 图表引擎
+    // 专业交互式双层 Plotly 图表引擎 (直连后台真实 K 线序列)
     // -------------------------------------------------------------
     function renderPlotlyChart() {
-      const { macro } = terminalState;
-      const times = [], opens = [], highs = [], lows = [], closes = [], raw_volumes = [];
-      let basePrice = 485.50;
+      const { macro, chart_data } = terminalState;
+      
+      const times = chart_data.times || [];
+      const opens = chart_data.opens || [];
+      const highs = chart_data.highs || [];
+      const lows = chart_data.lows || [];
+      const closes = chart_data.closes || [];
+      const clipped_volumes = chart_data.clipped_volumes || [];
+      const bar_colors = chart_data.bar_colors || [];
 
-      for (let i = 0; i < 32; i++) {
-        const totalMinutes = 21 * 60 + 30 + i * 5;
-        times.push(`${String(Math.floor(totalMinutes / 60) % 24).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`);
-        let o, h_bar, l_bar, c, vol;
-        if (i === 0) {
-          o = 487.20; h_bar = 488.50; l_bar = 486.80; c = 487.80; vol = 1450000;
-        } else if (i === 9) {
-          o = 486.60; l_bar = 486.10; h_bar = 487.10; c = 486.90; vol = 380000;
-        } else if (i > 9 && i <= 24) {
-          basePrice += 0.15 + (Math.random() * 0.1);
-          o = basePrice - 0.1; c = basePrice + 0.1; h_bar = c + 0.15; l_bar = o - 0.15; vol = 120000 + Math.random() * 90000;
-        } else {
-          basePrice += (Math.random() - 0.48) * 0.25;
-          o = basePrice - 0.08; c = basePrice + 0.08; h_bar = Math.max(o, c) + 0.12; l_bar = Math.min(o, c) - 0.12; vol = 95000 + Math.random() * 60000;
-        }
-        opens.push(o); highs.push(h_bar); lows.push(l_bar); closes.push(c); raw_volumes.push(vol);
-      }
-
-      // 95 分位数成交量截断
-      const sortedVols = [...raw_volumes].sort((a, b) => a - b);
-      const vol_p95 = sortedVols[Math.floor(sortedVols.length * 0.95)];
-      const clipped_volumes = raw_volumes.map(v => Math.min(v, vol_p95));
-      const bar_colors = closes.map((c, idx) => c >= opens[idx] ? '#00E676' : '#FF5252');
-
+      // 主图 K 线
       const traceCandle = {
         type: 'candlestick',
         x: times, open: opens, high: highs, low: lows, close: closes,
@@ -408,13 +382,41 @@
         hoverlabel: { bgcolor: '#0D1118', bordercolor: '#38BDF8', font: { family: 'JetBrains Mono', color: '#FFF' } }
       };
 
+      // 副图成交量 (已完成 P95 截断)
       const traceVolume = {
         type: 'bar',
         x: times, y: clipped_volumes,
-        yaxis: 'y2', name: 'VPA Vol',
+        yaxis: 'y2', name: 'VPA Vol (P95 Clip)',
         marker: { color: bar_colors, line: { color: bar_colors, width: 0.5 } },
         hoverlabel: { bgcolor: '#0D1118', font: { family: 'JetBrains Mono' } }
       };
+
+      // 组装真实交易信号标记
+      const annotations = [
+        {
+          xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_sbr[1],
+          text: `PRIMARY SBR [${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}]`,
+          showarrow: false, font: { family: 'Inter', size: 9.5, color: '#FF5252' }, xanchor: 'right'
+        },
+        {
+          xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_rbs[0],
+          text: `PRIMARY RBS [${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}]`,
+          showarrow: false, font: { family: 'Inter', size: 9.5, color: '#00E676' }, xanchor: 'right'
+        }
+      ];
+
+      if (chart_data.markers && chart_data.markers.length > 0) {
+        chart_data.markers.forEach(m => {
+          annotations.push({
+            x: m.time, y: m.price, yref: 'y1',
+            text: m.text,
+            showarrow: true, arrowhead: 2, arrowcolor: m.color,
+            ax: 0, ay: m.ay,
+            bgcolor: '#0D1118', bordercolor: m.color, borderwidth: 1,
+            font: { family: 'JetBrains Mono', size: 9.5, color: m.color }
+          });
+        });
+      }
 
       const layout = {
         template: 'plotly_dark',
@@ -422,106 +424,54 @@
         plot_bgcolor: '#080B10',
         margin: { l: 30, r: 60, t: 15, b: 30 },
         showlegend: false,
-        dragmode: 'pan', // 默认按住左键拖拽平移
-        hovermode: 'x unified', // 统一十字对齐
+        dragmode: 'pan',
+        hovermode: 'x unified',
         grid: { rows: 2, columns: 1, pattern: 'independent', roworder: 'top to bottom' },
         
-        // 顶部 K 线轴 (75% 空间)
         yaxis: {
-          domain: [0.26, 1.0],
-          side: 'right',
-          gridcolor: 'rgba(255,255,255,0.06)',
-          zeroline: false,
+          domain: [0.26, 1.0], side: 'right',
+          gridcolor: 'rgba(255,255,255,0.06)', zeroline: false,
           tickfont: { family: 'JetBrains Mono', size: 10, color: '#8B949E' },
-          showspikes: true,
-          spikemode: 'across',
-          spikesnap: 'cursor',
-          spikecolor: '#38BDF8',
-          spikethickness: 1,
-          spikedash: 'dot'
+          showspikes: true, spikemode: 'across', spikesnap: 'cursor', spikecolor: '#38BDF8', spikethickness: 1, spikedash: 'dot'
         },
-        // 底部成交量轴 (22% 空间)
         yaxis2: {
-          domain: [0.0, 0.22],
-          side: 'right',
-          gridcolor: 'rgba(255,255,255,0.04)',
-          zeroline: false,
+          domain: [0.0, 0.22], side: 'right',
+          gridcolor: 'rgba(255,255,255,0.04)', zeroline: false,
           tickfont: { family: 'JetBrains Mono', size: 8.5, color: '#6E7681' },
-          showspikes: true,
-          spikemode: 'across',
-          spikesnap: 'cursor',
-          spikecolor: '#38BDF8',
-          spikethickness: 1,
-          spikedash: 'dot'
+          showspikes: true, spikemode: 'across', spikesnap: 'cursor', spikecolor: '#38BDF8', spikethickness: 1, spikedash: 'dot'
         },
         xaxis: {
-          anchor: 'y2',
-          type: 'category',
+          anchor: 'y2', type: 'category',
           gridcolor: 'rgba(255,255,255,0.06)',
           tickfont: { family: 'JetBrains Mono', size: 9.5, color: '#8B949E' },
-          showspikes: true,
-          spikemode: 'across',
-          spikesnap: 'cursor',
-          spikecolor: '#38BDF8',
-          spikethickness: 1,
-          spikedash: 'dot'
+          showspikes: true, spikemode: 'across', spikesnap: 'cursor', spikecolor: '#38BDF8', spikethickness: 1, spikedash: 'dot'
         },
         shapes: [
-          // SBR 阻力战区
           {
             type: 'rect', xref: 'paper', yref: 'y1',
             x0: 0, x1: 1, y0: macro.primary_sbr[0], y1: macro.primary_sbr[1],
-            fillcolor: 'rgba(255, 82, 82, 0.15)',
-            line: { color: 'rgba(255, 82, 82, 0.5)', width: 1, dash: 'dash' },
-            layer: 'below'
+            fillcolor: 'rgba(255, 82, 82, 0.15)', line: { color: 'rgba(255, 82, 82, 0.5)', width: 1, dash: 'dash' }, layer: 'below'
           },
-          // RBS 支撑战区
           {
             type: 'rect', xref: 'paper', yref: 'y1',
             x0: 0, x1: 1, y0: macro.primary_rbs[0], y1: macro.primary_rbs[1],
-            fillcolor: 'rgba(0, 230, 118, 0.15)',
-            line: { color: 'rgba(0, 230, 118, 0.5)', width: 1, dash: 'dash' },
-            layer: 'below'
+            fillcolor: 'rgba(0, 230, 118, 0.15)', line: { color: 'rgba(0, 230, 118, 0.5)', width: 1, dash: 'dash' }, layer: 'below'
           },
-          // PDH 极值线
           {
             type: 'line', xref: 'paper', yref: 'y1',
-            x0: 0, x1: 1, y0: macro.anchors.pdh, y1: macro.anchors.pdh,
-            line: { color: '#F59E0B', width: 1, dash: 'dot' }
+            x0: 0, x1: 1, y0: macro.anchors.pdh, y1: macro.anchors.pdh, line: { color: '#F59E0B', width: 1, dash: 'dot' }
+          },
+          {
+            type: 'line', xref: 'paper', yref: 'y1',
+            x0: 0, x1: 1, y0: macro.anchors.pdl, y1: macro.anchors.pdl, line: { color: '#F59E0B', width: 1, dash: 'dot' }
           }
         ],
-        annotations: [
-          {
-            xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_sbr[1],
-            text: `PRIMARY SBR [${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}]`,
-            showarrow: false, font: { family: 'Inter', size: 9.5, color: '#FF5252' }, xanchor: 'right'
-          },
-          {
-            xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_rbs[0],
-            text: `PRIMARY RBS [${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}]`,
-            showarrow: false, font: { family: 'Inter', size: 9.5, color: '#00E676' }, xanchor: 'right'
-          },
-          {
-            x: '22:15', y: 486.50, yref: 'y1',
-            text: '🚀 BUY 486.50 (2B Sweep)',
-            showarrow: true, arrowhead: 2, arrowcolor: '#00E676', ax: 0, ay: 32,
-            bgcolor: '#0D1118', bordercolor: '#00E676', borderwidth: 1,
-            font: { family: 'JetBrains Mono', size: 9.5, color: '#00E676' }
-          },
-          {
-            x: '23:30', y: 488.90, yref: 'y1',
-            text: '🏁 TP 488.90 (+2.40 pt)',
-            showarrow: true, arrowhead: 2, arrowcolor: '#38BDF8', ax: 0, ay: -32,
-            bgcolor: '#0D1118', bordercolor: '#38BDF8', borderwidth: 1,
-            font: { family: 'JetBrains Mono', size: 9.5, color: '#38BDF8' }
-          }
-        ]
+        annotations: annotations
       };
 
-      // 开启专业级滚轮缩放与右上方模式栏
       const config = {
         responsive: true,
-        scrollZoom: true,          // 启用鼠标滚轮自由 Zoom In / Out
+        scrollZoom: true,          // 滚轮自由缩放
         displayModeBar: true,      // 显示专业看盘工具条
         modeBarButtonsToRemove: ['lasso2d', 'select2d'],
         displaylogo: false
