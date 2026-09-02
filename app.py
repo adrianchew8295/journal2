@@ -1,5 +1,5 @@
 # 文件名: app.py
-# 作用: 癸水 · QQQ 战区座舱（4 大垂直 Tab + 战区 13 行全天候稳定展示/手动微调 + 全表高亮色彩）
+# 作用: 癸水 · QQQ 战区座舱（50px 极简微缩 Emoji 导航轨 + 95% 超大宽屏主视口）
 
 import calendar
 import datetime
@@ -21,10 +21,10 @@ st.set_page_config(
     page_title="癸水 · QQQ 战区与 2B 同频座舱",
     layout="wide",
     page_icon="🌊",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# 2. 注入针对 41 岁护眼的大字号、高对比暗黑 CSS
+# 2. 注入针对 41 岁护眼的大字号、高对比暗黑 CSS 与 Mini Rail 样式
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700;800&family=Noto+Serif+SC:wght@700;900&display=swap');
@@ -35,7 +35,7 @@ st.markdown("""
         font-family: 'Inter', -apple-system, sans-serif !important;
     }
     .block-container {
-        padding: 8px 16px !important;
+        padding: 6px 14px !important;
         max-width: 100vw !important;
     }
 
@@ -78,7 +78,7 @@ st.markdown("""
         border-radius: 12px;
     }
 
-    /* 核心指标卡 */
+    /* 指标卡加粗放大 */
     div[data-testid="stMetric"] {
         background: rgba(14, 20, 32, 0.85) !important;
         border: 1px solid rgba(255, 255, 255, 0.12) !important;
@@ -97,20 +97,23 @@ st.markdown("""
         color: #94A3B8 !important;
     }
 
-    /* 侧边大按钮 */
-    .stButton>button {
-        font-size: 13.5px !important;
-        font-weight: 700 !important;
-        border-radius: 6px !important;
-        padding: 8px 12px !important;
-        background: #0F172A !important;
-        color: #F8FAFC !important;
-        border: 1px solid #334155 !important;
+    /* 左侧 Mini Rail 图标按钮定制 */
+    div[data-testid="column"]:nth-of-type(1) .stButton>button {
+        height: 48px !important;
+        font-size: 20px !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-radius: 8px !important;
+        background: #0D131F !important;
+        border: 1px solid #1E293B !important;
+        margin-bottom: 4px !important;
     }
-    .stButton>button:hover {
+    div[data-testid="column"]:nth-of-type(1) .stButton>button:hover {
         border-color: #38BDF8 !important;
-        color: #38BDF8 !important;
-        box-shadow: 0 0 10px rgba(56, 189, 248, 0.25) !important;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.35) !important;
+        background: rgba(56, 189, 248, 0.1) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -143,51 +146,51 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 5. 左侧栏 (4 个 Tab 导航 + 走位工具) + 右侧核心工作台
-col_nav, col_main = st.columns([1.8, 8.2], gap="small")
+# 5. 左侧微缩 Mini Rail (0.6) + 右侧 95% 全屏主视口 (9.4)
+col_rail, col_main = st.columns([0.65, 9.35], gap="small")
 
 if "active_main_tab" not in st.session_state:
     st.session_state["active_main_tab"] = "tab1"
 
-with col_nav:
-    st.markdown("<div style='font-size:12px; font-weight:800; color:#64748B; margin-bottom:6px;'>📍 核心战术导航</div>", unsafe_allow_html=True)
-    
-    if st.button("📡 1. 宏观雷达", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab1" else "secondary"):
+with col_rail:
+    # 4 大核心 Tab 极简微缩图标 (带悬浮提示与高亮状态)
+    if st.button("📡", help="1. 宏观雷达与 13 标的 Watchlist", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab1" else "secondary"):
         st.session_state["active_main_tab"] = "tab1"
         st.rerun()
 
-    if st.button("💼 2. 资金滚动罗盘", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab2_port" else "secondary"):
+    if st.button("💼", help="2. 个人实操持仓与资金滚动罗盘", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab2_port" else "secondary"):
         st.session_state["active_main_tab"] = "tab2_port"
         st.rerun()
 
-    if st.button("🎯 3. 战区富途代码", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab3_cockpit" else "secondary"):
+    if st.button("🎯", help="3. QQQ 战区富途 13 行代码 (含手动微调)", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab3_cockpit" else "secondary"):
         st.session_state["active_main_tab"] = "tab3_cockpit"
         st.rerun()
 
-    if st.button("📅 4. 2B月历与复盘", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab4_journal" else "secondary"):
+    if st.button("📅", help="4. QQQ 2B 同频月历账本与 5M 走势深度复盘", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab4_journal" else "secondary"):
         st.session_state["active_main_tab"] = "tab4_journal"
         st.rerun()
 
-    st.markdown("---")
-    st.markdown("<div style='font-size:12px; font-weight:800; color:#64748B; margin-bottom:6px;'>⚡ 走位快捷工具</div>", unsafe_allow_html=True)
-    if st.button("🔄 刷新全盘数据", use_container_width=True):
+    st.markdown("<div style='height:12px; border-bottom:1px solid #1E293B; margin-bottom:12px;'></div>", unsafe_allow_html=True)
+    
+    # 辅助快捷走位图标
+    if st.button("🔄", help="刷新全盘最新行情与战区数据", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-    if st.button("🧪 全链路接口自检", use_container_width=True):
-        with st.spinner("检测中..."):
+    if st.button("🧪", help="全链路接口与连接自检", use_container_width=True):
+        with st.spinner("自检中..."):
             d1, d5, errs = fetch_raw_data_with_retry(period_5m="5d")
             if errs: st.error("异常: " + "; ".join(errs))
-            else: st.success("接口畅通")
+            else: st.success("接口正常")
 
-# ----------------- 右侧主工作区呈现 -----------------
+# ----------------- 右侧 95% 全屏主工作区 -----------------
 with col_main:
     
-    # ================= TAB 1: 宏观雷达 (13 标的 Watchlist + 日线穿透图) =================
+    # ================= TAB 1: 宏观雷达 =================
     if st.session_state["active_main_tab"] == "tab1":
         render_macro_radar_tab()
 
-    # ================= TAB 2: 实操持仓与资金滚动罗盘 (独立全景 TAB) =================
+    # ================= TAB 2: 资金滚动罗盘 =================
     elif st.session_state["active_main_tab"] == "tab2_port":
         st.subheader("💼 我的实操持仓与资金滚动罗盘 (Portfolio Rolling Compass)")
         st.caption("系统自动结合 13 核心标的大级别日周轮动阶段，核算持仓盈亏并给出滚动换股策略。")
@@ -199,7 +202,7 @@ with col_main:
         p_dict = res_p.get("price_lookup", {}) if (res_p and isinstance(res_p, dict)) else {}
         render_portfolio_expansion(price_dict=p_dict)
 
-    # ================= TAB 3: 战区富途代码 (全天候展示 + 手动微调) =================
+    # ================= TAB 3: 战区富途代码 =================
     elif st.session_state["active_main_tab"] == "tab3_cockpit":
         st.subheader("🎯 QQQ 5M 战区座舱 (富途 13 行指标代码)")
         
@@ -211,7 +214,6 @@ with col_main:
         p_to_display = None
         display_title = ""
 
-        # 1. 尝试从历史中读取
         if sel_mode.startswith("📅 历史战区:"):
             target_hist_date = sel_mode.replace("📅 历史战区: ", "").strip()
             hist_row = df_journal_all[df_journal_all["Date_MYT"].astype(str) == target_hist_date].iloc[0]
@@ -232,13 +234,11 @@ with col_main:
             }
             display_title = f"📋 历史存档 [{target_hist_date}] 13 行富途代码 (可直接复制):"
         else:
-            # 2. 实时计算
             d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
             if d1h is not None and d5m is not None:
                 p_to_display = compute_futu_13_params(d1h, d5m, now_ny)
                 display_title = "📋 最新实时 13 行富途代码 (点击右上角复制):"
             
-            # 3. 若处于白天或接口正在连接，提供高精度保底
             if not p_to_display:
                 if recorded_dates:
                     latest_d = recorded_dates[0]
@@ -279,7 +279,7 @@ with col_main:
             m3.metric("📈 1H EMA20 均线", f"${p_to_display['EMA20_1H']:.2f}")
             m4.metric("📊 1H ATR 波动", f"${p_to_display['ATR_1H']:.2f}")
 
-            # ---------------- 战区 13 行手动覆盖/微调面板 ----------------
+            # 战区 13 行手动覆盖/微调面板
             with st.expander("⚙️ 手动微调 / 覆盖当前 13 行战区参数", expanded=False):
                 st.caption("允许交易员根据盘感或消息面手动修正 SBR/RBS 与多空三灯，点击保存后实时生效。")
                 c_m1, c_m2, c_m3 = st.columns(3)
@@ -555,6 +555,17 @@ with col_main:
                     st.info(f"选定 `{cur_sel_date}` 无详细开仓数据。")
             else:
                 st.info("💡 点击左侧月历中任意一天的「🔍 查图」，此处将实时联动展示战术明细。")
+
+            st.markdown("---")
+            total_days_cnt = max(len(df_month), 1)
+            discipline_rate = (empty_days / total_days_cnt) * 100
+            st.write(f"🛡️ **空仓防守率**: `{discipline_rate:.1f}%`")
+            st.write(f"🎯 **开仓出手率**: `{100 - discipline_rate:.1f}%`")
+            if total_trades > 0:
+                avg_win = valid_trades[valid_trades["PnL_Points"] > 0]["PnL_Points"].mean() if win_trades > 0 else 0.0
+                avg_loss = abs(valid_trades[valid_trades["PnL_Points"] < 0]["PnL_Points"].mean()) if loss_trades > 0 else 0.0
+                pnl_ratio = (avg_win / avg_loss) if avg_loss > 0 else (avg_win if avg_win > 0 else 1.0)
+                st.write(f"⚖️ **实操盈亏比**: `{pnl_ratio:.2f} : 1`")
 
         # 模块 D: 13 行全量战区参数历史大表
         st.markdown("---")
