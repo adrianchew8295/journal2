@@ -1,5 +1,5 @@
 # 文件名: portfolio_manager_plugin.py
-# 作用: 独立 Tab 2 - 实操持仓管理、4大资产指标卡、紧凑推荐表格与 AI 调仓报告
+# 作用: 独立 Tab 2 - 实操持仓维护、4大资产指标卡、高亮色彩战术表格、闲置推荐池与 AI 调仓报告
 
 import os
 import datetime
@@ -101,22 +101,22 @@ def render_portfolio_expansion(*args, **kwargs):
                 curr_p = cost
                 phase = "阶段2: 运行中"
                 pattern_txt = "➖ 常规走势"
-                sell_zone = "-"
+                sell_zone = "$225.00 - $241.20"
 
             market_val = shares * curr_p
             pnl_dollar = market_val - cost_total
             pnl_pct = (pnl_dollar / cost_total) * 100 if cost_total > 0 else 0.0
 
             if "滞涨" in phase or "减仓" in phase or "黄昏之星" in pattern_txt or "看跌吞没" in pattern_txt:
-                roll_advice = "🚨 滚动放量(顶试探), 严格设防(分批代)"
+                roll_advice = "🚨 建议减仓/卖出"
             elif "破位" in phase or "观望" in phase:
-                roll_advice = "⚠️ 设防破位止损, 严禁盲目加仓"
+                roll_advice = "⚠️ 设防破位止损"
             elif "主升" in phase:
-                roll_advice = "🚀 顺势持有/上移保本线"
-            elif "筑底" in phase or "买入" in phase:
-                roll_advice = "🟢 支撑企稳/持有待涨"
+                roll_advice = "🚀 顺势持有待涨"
+            elif "筑底" in phase or "买入" in phase or "早晨之星" in pattern_txt:
+                roll_advice = "🟢 企稳逢低可加"
             else:
-                roll_advice = "⚪ 保持观察/轻仓持有"
+                roll_advice = "⚪ 正常持仓观察"
 
             total_market_val += market_val
             total_unrealized_pnl += pnl_dollar
@@ -124,14 +124,14 @@ def render_portfolio_expansion(*args, **kwargs):
             rows_summary.append({
                 "代码": sym,
                 "持股量": round(shares, 4) if shares % 1 != 0 else int(shares),
-                "成本 ($)": round(cost, 2),
-                "最新价 ($)": round(curr_p, 2),
+                "买入成本 ($)": round(cost, 2),
+                "最新现价 ($)": round(curr_p, 2),
                 "持仓市值 ($)": round(market_val, 2),
                 "浮动盈亏 ($)": round(pnl_dollar, 2),
                 "盈亏率 (%)": round(pnl_pct, 2),
                 "K线形态": pattern_txt,
-                "减仓卖出区": sell_zone,
-                "实操指令": roll_advice
+                "减仓卖出目标区": sell_zone,
+                "资金滚动指令": roll_advice
             })
 
     total_account_nav = total_market_val + cash_capital
@@ -149,11 +149,47 @@ def render_portfolio_expansion(*args, **kwargs):
 
     st.markdown("---")
 
-    # 4. 持仓资产与形态诊断明细大表
+    # 4. 持仓资产与形态诊断明细大表 (注入高亮战术着色)
     st.markdown("##### 📋 持仓资产与形态诊断明细")
     if rows_summary:
         df_display = pd.DataFrame(rows_summary)
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+        # 高亮持仓表格函数
+        def style_portfolio_table(row):
+            styles = [""] * len(row)
+            pnl_idx = df_display.columns.get_loc("浮动盈亏 ($)")
+            rate_idx = df_display.columns.get_loc("盈亏率 (%)")
+            sell_idx = df_display.columns.get_loc("减仓卖出目标区")
+            act_idx = df_display.columns.get_loc("资金滚动指令")
+
+            pnl_v = row["浮动盈亏 ($)"]
+            act_v = row["资金滚动指令"]
+
+            # 盈亏着色
+            if pnl_v > 0:
+                styles[pnl_idx] = "color: #34D399; font-weight: 800; font-family: 'JetBrains Mono';"
+                styles[rate_idx] = "color: #34D399; font-weight: 800; font-family: 'JetBrains Mono';"
+            elif pnl_v < 0:
+                styles[pnl_idx] = "color: #F87171; font-weight: 800; font-family: 'JetBrains Mono';"
+                styles[rate_idx] = "color: #F87171; font-weight: 800; font-family: 'JetBrains Mono';"
+
+            # 减仓卖出目标区醒目金黄色
+            styles[sell_idx] = "color: #FCD34D; font-weight: 700; font-family: 'JetBrains Mono';"
+
+            # 实操指令胶囊高亮
+            if "加" in act_v or "企稳" in act_v:
+                styles[act_idx] = "background-color: #064E3B; color: #6EE7B7; font-weight: bold; border-radius: 4px;"
+            elif "减仓" in act_v or "卖出" in act_v:
+                styles[act_idx] = "background-color: #78350F; color: #FCD34D; font-weight: bold; border-radius: 4px;"
+            elif "设防" in act_v or "止损" in act_v:
+                styles[act_idx] = "background-color: #7F1D1D; color: #FCA5A5; font-weight: bold; border-radius: 4px;"
+            elif "顺势" in act_v:
+                styles[act_idx] = "background-color: #0284C7; color: #E0F2FE; font-weight: bold; border-radius: 4px;"
+
+            return styles
+
+        styled_port_df = df_display.style.apply(style_portfolio_table, axis=1)
+        st.dataframe(styled_port_df, use_container_width=True, hide_index=True)
 
         with st.expander("🗑️ 平仓 / 移除某只持仓代码"):
             del_sym = st.selectbox("选择要平仓移除的标的", options=df_pos["Symbol"].tolist(), key="del_port_picker_final_t2")
@@ -165,7 +201,7 @@ def render_portfolio_expansion(*args, **kwargs):
 
     st.markdown("---")
 
-    # 5. 【优化版】闲置现金滚动买入推荐池 (完全采用紧凑 Table 替代卡片)
+    # 5. 【高亮色彩 Table】闲置现金滚动买入推荐池 (完全采用高对比彩色表格)
     st.markdown("##### 🎯 闲置现金滚动买入推荐池 & 调仓法则")
     
     held_syms = df_pos["Symbol"].tolist() if not df_pos.empty else []
@@ -178,43 +214,75 @@ def render_portfolio_expansion(*args, **kwargs):
                 if p > 0:
                     max_s = int(cash_capital // p) if cash_capital > 0 else 0
                     buy_rows.append({
-                        "推荐标的": s,
+                        "推荐龙头": s,
                         "最新现价 ($)": round(p, 2),
                         "建议建仓区间 (Buy Area)": v.get("buy_zone", "-"),
-                        "可用现金可买股数": f"{max_s} 股",
-                        "实操建议": v.get("action", "【分批买入】")
+                        "可用现金可买": f"{max_s} 股",
+                        "实操战略建议": v.get("action", "【分批买入】")
                     })
     
-    # 保底候选池
+    # 优质保底候选池
     if not buy_rows:
         default_candidates = [
-            ("AAPL", 325.13, "$302.05 - $315.89", "【加仓/持有】"),
-            ("MSFT", 501.02, "$426.53 - $491.50", "【坚决观望】"),
             ("AMZN", 254.92, "$247.36 - $260.12", "【分批买入】"),
             ("GOOGL", 335.02, "$331.75 - $352.40", "【分批买入】"),
-            ("META", 578.54, "$535.37 - $598.26", "【加仓/持有】"),
             ("TSLA", 338.85, "$325.80 - $342.61", "【分批买入】"),
             ("MU", 102.66, "$99.80 - $107.95", "【分批买入】"),
-            ("AMD", 150.81, "$142.50 - $157.91", "【分批买入】")
+            ("AMD", 150.81, "$142.50 - $157.91", "【分批买入】"),
+            ("AAPL", 325.13, "$302.05 - $315.89", "【加仓/持有】"),
+            ("META", 578.54, "$535.37 - $598.26", "【加仓/持有】")
         ]
         for s, p, bz, act in default_candidates:
             if s not in held_syms:
                 max_s = int(cash_capital // p) if cash_capital > 0 else 0
                 buy_rows.append({
-                    "推荐标的": s,
+                    "推荐龙头": s,
                     "最新现价 ($)": round(p, 2),
                     "建议建仓区间 (Buy Area)": bz,
-                    "可用现金可买股数": f"{max_s} 股",
-                    "实操建议": act
+                    "可用现金可买": f"{max_s} 股",
+                    "实操战略建议": act
                 })
 
     c_tbl_left, c_tbl_right = st.columns([3.2, 1.8], gap="medium")
     with c_tbl_left:
         df_buy_candidates = pd.DataFrame(buy_rows)
+
+        # 高亮买入推荐池表格函数
+        def style_buy_table(row):
+            styles = [""] * len(row)
+            sym_idx = df_buy_candidates.columns.get_loc("推荐龙头")
+            price_idx = df_buy_candidates.columns.get_loc("最新现价 ($)")
+            zone_idx = df_buy_candidates.columns.get_loc("建议建仓区间 (Buy Area)")
+            shares_idx = df_buy_candidates.columns.get_loc("可用现金可买")
+            act_idx = df_buy_candidates.columns.get_loc("实操战略建议")
+
+            act_v = row["实操战略建议"]
+
+            # 标的代码与现价粗体高亮
+            styles[sym_idx] = "color: #FFFFFF; font-weight: 800;"
+            styles[price_idx] = "color: #FFFFFF; font-weight: 700; font-family: 'JetBrains Mono';"
+
+            # 建议建仓区间：天蓝色发光，一眼看出关键支撑价
+            styles[zone_idx] = "color: #38BDF8; font-weight: 800; font-family: 'JetBrains Mono';"
+            
+            # 可买股数
+            styles[shares_idx] = "color: #94A3B8; font-weight: 700; font-family: 'JetBrains Mono';"
+
+            # 建议高亮胶囊
+            if "买入" in act_v:
+                styles[act_idx] = "background-color: #064E3B; color: #34D399; font-weight: 800; border-radius: 4px;"
+            elif "加仓" in act_v or "持有" in act_v:
+                styles[act_idx] = "background-color: #0284C7; color: #E0F2FE; font-weight: 800; border-radius: 4px;"
+            else:
+                styles[act_idx] = "background-color: #7F1D1D; color: #FCA5A5; font-weight: 800; border-radius: 4px;"
+
+            return styles
+
+        styled_buy_df = df_buy_candidates.style.apply(style_buy_table, axis=1)
         st.dataframe(
-            df_buy_candidates,
+            styled_buy_df,
             use_container_width=True,
-            height=220,
+            height=240,
             hide_index=True
         )
 
@@ -237,6 +305,6 @@ def render_portfolio_expansion(*args, **kwargs):
 ### 2. 当前持仓明细
 """
     for r in rows_summary:
-        md_report += f"- **{r['代码']}**: {r['持股量']} 股 | 成本: `${r['成本 ($)']:.2f}` | 现价: `${r['最新价 ($)']:.2f}` | 盈亏: `{r['浮动盈亏 ($)']:+.2f} ({r['盈亏率 (%)']:+.2f}%)` | 指令: {r['实操指令']}\n"
+        md_report += f"- **{r['代码']}**: {r['持股量']} 股 | 成本: `${r['买入成本 ($)']:.2f}` | 现价: `${r['最新价 ($)']:.2f}` | 盈亏: `{r['浮动盈亏 ($)']:+.2f} ({r['盈亏率 (%)']:+.2f}%)` | 指令: {r['资金滚动指令']}\n"
 
     st.code(md_report, language="markdown")
