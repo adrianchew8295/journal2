@@ -36,7 +36,6 @@ d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
 p = compute_futu_13_params(d1h, d5m, cutoff_ny) if (d1h is not None and d5m is not None) else None
 trades, day_5m = simulate_trades_with_2b(d5m, p, cutoff_ny, window_end_ny) if (p and d5m is not None) else ([], None)
 
-# 读取月历历史用于顶部 5-Day Strip
 df_journal = load_journal()
 
 # 4. 构建数据模型 (Tab 1 Macro + Tab 3 Review)
@@ -67,11 +66,11 @@ core13_data = [
     {"symbol": "META", "tier": "T1", "price": 512.90, "change_pct": 2.04, "status": "bull", "tag": "【机构持续吸筹】"},
     {"symbol": "AMZN", "tier": "T1", "price": 178.50, "change_pct": 0.88, "status": "bull", "tag": "【中枢稳步抬升】"},
     {"symbol": "GOOGL", "tier": "T1", "price": 166.40, "change_pct": 0.32, "status": "neutral", "tag": "【量能中性平稳】"},
-    {"symbol": "MU",   tier": "T2", "price": 112.40, "change_pct": 1.90, "status": "bull", "tag": "【支撑位等2B】"},
-    {"symbol": "AMD",  tier": "T2", "price": 154.60, "change_pct": 1.45, "status": "bull", "tag": "【共振突破前高】"},
-    {"symbol": "LRCX", tier: "T2", "price": 920.10, "change_pct": 2.15, "status": "bull", "tag": "【半导体真突破】"},
-    {"symbol": "WDC",  tier: "T2", "price": 68.30,  change_pct": 0.20, "status": "neutral", "tag": "【横盘洗盘蓄势】"},
-    {"symbol": "STX",  tier: "T2", "price": 98.70,  change_pct: -0.40, "status": "bear", "tag": "【先锋轻微背离】"}
+    {"symbol": "MU",   "tier": "T2", "price": 112.40, "change_pct": 1.90, "status": "bull", "tag": "【支撑位等2B】"},
+    {"symbol": "AMD",  "tier": "T2", "price": 154.60, "change_pct": 1.45, "status": "bull", "tag": "【共振突破前高】"},
+    {"symbol": "LRCX", "tier": "T2", "price": 920.10, "change_pct": 2.15, "status": "bull", "tag": "【半导体真突破】"},
+    {"symbol": "WDC",  "tier": "T2", "price": 68.30,  "change_pct": 0.20, "status": "neutral", "tag": "【横盘洗盘蓄势】"},
+    {"symbol": "STX",  "tier": "T2", "price": 98.70,  "change_pct": -0.40, "status": "bear", "tag": "【先锋轻微背离】"}
 ]
 
 # 5M 走势与复盘封装
@@ -116,10 +115,9 @@ json_state = json.dumps({
     "review": review_data
 }, ensure_ascii=False)
 
-# 5. Streamlit 主页面渲染：消除边距，注入 100vh 机构终端
+# 5. Streamlit 全局样式注入 (100vh 零滚动)
 st.markdown("""
 <style>
-    /* 彻底消除 Streamlit 默认留白与全局滚动条 */
     #MainMenu, header, footer { visibility: hidden !important; height: 0 !important; }
     .block-container {
         padding: 0 !important;
@@ -323,218 +321,4 @@ terminal_html = f"""
             </div>
           </div>
           <div class="anchors-grid">
-            <div class="anchor-cell"><div class="anchor-tag">PDH</div><div class="anchor-val">{macro_data['anchors']['pdh']:.2f}</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PDL</div><div class="anchor-val">{macro_data['anchors']['pdl']:.2f}</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PMH</div><div class="anchor-val">{macro_data['anchors']['pmh']:.2f}</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PML</div><div class="anchor-val">{macro_data['anchors']['pml']:.2f}</div></div>
-          </div>
-        </div>
-        <div class="core13-section">
-          <div class="core13-header">
-            <span style="width: 50px;">SYMBOL</span><span style="width: 26px;">TIER</span>
-            <span style="width: 58px; text-align: right;">PRICE</span><span style="width: 52px; text-align: right;">CHG</span>
-            <span style="flex: 1; text-align: right;">ACTION</span>
-          </div>
-          <div class="core13-body" id="core13-list"></div>
-        </div>
-      </aside>
-
-      <main id="right-workspace">
-        <div id="track-strip">
-          <div class="weekday-pills">
-            <div class="day-pill"><span class="name">MON</span> <span class="pnl-pos">+1.80 pt</span></div>
-            <div class="day-pill active"><span class="name">TUE</span> <span class="pnl-pos">+{review_data['outcome_pnl']:.2f} pt</span></div>
-            <div class="day-pill"><span class="name">WED</span> <span class="pnl-flat">⚪ 纪律空仓</span></div>
-            <div class="day-pill"><span class="name">THU</span> <span class="pnl-neg">-0.90 pt</span></div>
-            <div class="day-pill"><span class="name">FRI</span> <span class="pnl-pos">+3.10 pt</span></div>
-          </div>
-          <div class="day-summary-banner">
-            <span>ACTIVE TRADE:</span>
-            <span>Setup: <b>{review_data['setup']}</b></span>
-            <span>Entry: <b>{review_data['entry_price']:.2f}</b></span>
-            <span>TP: <b style="color: var(--bull);">{review_data['take_profit']:.2f} (+{review_data['outcome_pnl']:.2f} pt)</b></span>
-          </div>
-        </div>
-        <div id="chart-station"></div>
-      </main>
-    </div>
-
-    <div id="ai-drawer">
-      <div class="drawer-header">
-        <div class="drawer-title">⚡ AI CONTEXT AGGREGATOR</div>
-        <button class="btn-close" onclick="toggleAIDrawer()">✕</button>
-      </div>
-      <div class="drawer-actions">
-        <button class="btn-copy-all" onclick="copyAIPrompt()">1-CLICK COPY FOR LLM</button>
-        <button class="btn-toggle-state" onclick="toggleReviewState()">Toggle State: <b id="state-label">Completed</b></button>
-      </div>
-      <div class="drawer-body">
-        <div class="prompt-block">
-          <div class="prompt-block-header"><span>SECTION 1: Macro & Core 13 Snapshot</span><span class="status-badge completed">LIVE SYNC</span></div>
-          <pre id="prompt-section-macro" style="white-space: pre-wrap;"></pre>
-        </div>
-        <div class="prompt-block">
-          <div class="prompt-block-header"><span>SECTION 2: 5M VPA & Execution Deep Review</span><span id="review-status-badge" class="status-badge completed">COMPLETED</span></div>
-          <pre id="prompt-section-review" style="white-space: pre-wrap;"></pre>
-        </div>
-      </div>
-    </div>
-    <div id="toast">Prompt Copied to Clipboard!</div>
-  </div>
-
-  <script>
-    const terminalState = {json_state};
-
-    function updateClocks() {{
-      const now = new Date();
-      document.getElementById('clock-myt').innerText = new Intl.DateTimeFormat('en-GB', {{ timeZone: "Asia/Kuala_Lumpur", hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }}).format(now);
-      document.getElementById('clock-et').innerText = new Intl.DateTimeFormat('en-GB', {{ timeZone: "America/New_York", hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }}).format(now);
-    }}
-    setInterval(updateClocks, 1000); updateClocks();
-
-    function renderCore13() {{
-      const container = document.getElementById('core13-list');
-      container.innerHTML = terminalState.core13.map(row => {{
-        const tagClass = row.status === 'bull' ? 'tag-bull' : (row.status === 'bear' ? 'tag-bear' : 'tag-neutral');
-        const chgColor = row.change_pct >= 0 ? 'var(--bull)' : 'var(--bear)';
-        const chgSign = row.change_pct > 0 ? '+' : '';
-        return `
-          <div class="core-row">
-            <span class="col-sym">${{row.symbol}}</span>
-            <span class="col-tier">${{row.tier}}</span>
-            <span class="col-price">$${{row.price.toFixed(2)}}</span>
-            <span class="col-chg" style="color: ${{chgColor}}">${{chgSign}}${{row.change_pct.toFixed(2)}}%</span>
-            <span class="col-tag ${{tagClass}}">${{row.tag}}</span>
-          </div>`;
-      }}).join('');
-    }}
-    renderCore13();
-
-    function updateAIDrawerContent() {{
-      const {{ macro, core13, review }} = terminalState;
-      const anomalies = core13.filter(c => Math.abs(c.change_pct) >= 1.5 || c.status === 'bull').slice(0, 5)
-        .map(c => `- ${{c.symbol.padEnd(5)}}: $${{c.price.toFixed(2)}} (${{c.change_pct >= 0 ? '+' : ''}}${{c.change_pct.toFixed(2)}}%) | ${{c.tag}}`).join('\\n');
-
-      const macroPrompt = `[MACRO VERDICT]\\nSession: ${{macro.session}}\\nQQQ Price: $${{macro.qqq_price}} (+${{macro.qqq_change_pct}}%) | ATR Usage: ${{macro.atr_usage_pct}}%\\nMarket Tone: Bullish Wave (${{macro.leading_count}}/${{macro.total_count}} Leading)\\nPrimary RBS (Support): ${{macro.primary_rbs[0].toFixed(2)}} - ${{macro.primary_rbs[1].toFixed(2)}}\\nPrimary SBR (Resistance): ${{macro.primary_sbr[0].toFixed(2)}} - ${{macro.primary_sbr[1].toFixed(2)}}\\n\\n[CORE 13 ANOMALIES]\\n${{anomalies}}`;
-      document.getElementById('prompt-section-macro').innerText = macroPrompt;
-
-      const badge = document.getElementById('review-status-badge');
-      if (!review.is_completed) {{
-        badge.className = 'status-badge computing';
-        badge.innerText = `⏳ COMPUTING (${{review.current_bars}}/${{review.total_bars}} Bars)`;
-        document.getElementById('prompt-section-review').innerText = `[STATUS: 5M-VPA 深度量价计算中 (${{review.current_bars}}/${{review.total_bars}} Bars)... 尚未生成最终结论]\\n当前进度: ${{review.current_bars}} / ${{review.total_bars}} 根K线\\n提示: 盘中实时数据持续注入中，当日最终胜率与盈亏比复盘尚未生成。`;
-      }} else {{
-        badge.className = 'status-badge completed';
-        badge.innerText = `COMPLETED (${{review.total_bars}}/${{review.total_bars}} BARS)`;
-        document.getElementById('prompt-section-review').innerText = `[EXECUTION DETAIL - ${{review.day}} ${{review.date}}]\\nBias: ${{review.bias}}\\nSetup: ${{review.setup}}\\nEntry: ${{review.entry_price.toFixed(2)}} (${{review.entry_time}})\\nStop Loss: ${{review.stop_loss.toFixed(2)}}\\nTake Profit: ${{review.take_profit.toFixed(2)}}\\nResult: +${{review.outcome_pnl.toFixed(2)}} pt (Target Reached)\\nDiscipline Score: ${{review.discipline_score}}`;
-      }}
-    }}
-
-    function toggleAIDrawer() {{
-      const drawer = document.getElementById('ai-drawer');
-      drawer.classList.toggle('open');
-      if (drawer.classList.contains('open')) updateAIDrawerContent();
-    }}
-
-    function toggleReviewState() {{
-      terminalState.review.is_completed = !terminalState.review.is_completed;
-      terminalState.review.current_bars = terminalState.review.is_completed ? 48 : 42;
-      document.getElementById('state-label').innerText = terminalState.review.is_completed ? 'Completed' : 'Computing (42/48)';
-      updateAIDrawerContent();
-    }}
-
-    function copyAIPrompt() {{
-      const p1 = document.getElementById('prompt-section-macro').innerText;
-      const p2 = document.getElementById('prompt-section-review').innerText;
-      const task = `[TASK FOR AI]: 请基于上述宏观结构、Core 13强弱与复盘指标，严格按照定量逻辑，给出下一交易窗口的入场风险评估及关键阻力/支撑策略。`;
-      const fullText = `# QUANT DESK SNAPSHOT & CONTEXT\\n\\n## SECTION 1: MACRO & CORE 13 SNAPSHOT\\n${{p1}}\\n\\n## SECTION 2: 5M VPA & EXECUTION DEEP REVIEW\\n${{p2}}\\n\\n---\\n${{task}}`;
-      navigator.clipboard.writeText(fullText).then(() => showToast("Full Context Prompt Copied for LLM!"));
-    }}
-
-    function copyFutuLines() {{
-      const sbr = terminalState.macro.primary_sbr;
-      const rbs = terminalState.macro.primary_rbs;
-      const futu = `TREND_BIAS := 1;\\nSBR_TOP := ${{sbr[1].toFixed(2)}};\\nSBR_BOT := ${{sbr[0].toFixed(2)}};\\nRBS_TOP := ${{rbs[1].toFixed(2)}};\\nRBS_BOT := ${{rbs[0].toFixed(2)}};`;
-      navigator.clipboard.writeText(futu).then(() => showToast("Futu 13-Line Script Copied!"));
-    }}
-
-    function showToast(msg) {{
-      const toast = document.getElementById('toast');
-      toast.innerText = msg; toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2200);
-    }}
-
-    window.addEventListener('keydown', (e) => {{
-      if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {{
-        e.preventDefault(); toggleAIDrawer();
-      }}
-    }});
-
-    function renderPlotlyChart() {{
-      const times = [], opens = [], highs = [], lows = [], closes = [], raw_volumes = [];
-      let basePrice = 485.50;
-      for (let i = 0; i < 32; i++) {{
-        const totalMinutes = 21 * 60 + 30 + i * 5;
-        times.push(`${{String(Math.floor(totalMinutes / 60) % 24).padStart(2, '0')}}:${{String(totalMinutes % 60).padStart(2, '0')}}`);
-        let o, h_bar, l_bar, c, vol;
-        if (i === 0) {{ o = 487.20; h_bar = 488.50; l_bar = 486.80; c = 487.80; vol = 1450000; }}
-        else if (i === 9) {{ o = 486.60; l_bar = 486.10; h_bar = 487.10; c = 486.90; vol = 380000; }}
-        else if (i > 9 && i <= 24) {{
-          basePrice += 0.15 + (Math.random() * 0.1);
-          o = basePrice - 0.1; c = basePrice + 0.1; h_bar = c + 0.15; l_bar = o - 0.15; vol = 120000 + Math.random() * 90000;
-        }} else {{
-          basePrice += (Math.random() - 0.48) * 0.25;
-          o = basePrice - 0.08; c = basePrice + 0.08; h_bar = Math.max(o, c) + 0.12; l_bar = Math.min(o, c) - 0.12; vol = 95000 + Math.random() * 60000;
-        }}
-        opens.push(o); highs.push(h_bar); lows.push(l_bar); closes.push(c); raw_volumes.push(vol);
-      }}
-
-      const sortedVols = [...raw_volumes].sort((a, b) => a - b);
-      const vol_p95 = sortedVols[Math.floor(sortedVols.length * 0.95)];
-      const clipped_volumes = raw_volumes.map(v => Math.min(v, vol_p95));
-      const bar_colors = closes.map((c, idx) => c >= opens[idx] ? '#00E676' : '#FF5252');
-
-      const traceCandle = {{
-        type: 'candlestick', x: times, open: opens, high: highs, low: lows, close: closes, yaxis: 'y1', name: 'QQQ 5M',
-        increasing: {{ line: {{ color: '#00E676', width: 1.2 }}, fillcolor: '#00E676' }},
-        decreasing: {{ line: {{ color: '#FF5252', width: 1.2 }}, fillcolor: '#FF5252' }}
-      }};
-      const traceVolume = {{
-        type: 'bar', x: times, y: clipped_volumes, yaxis: 'y2', name: 'VPA Vol (P95 Clip)',
-        marker: {{ color: bar_colors, line: {{ color: bar_colors, width: 0.5 }} }}
-      }};
-
-      const layout = {{
-        template: 'plotly_dark', paper_bgcolor: '#080B10', plot_bgcolor: '#080B10',
-        margin: {{ l: 45, r: 45, t: 15, b: 25 }}, showlegend: false, hovermode: 'x unified',
-        grid: {{ rows: 2, columns: 1, pattern: 'independent', roworder: 'top to bottom' }},
-        yaxis: {{ domain: [0.26, 1.0], side: 'right', gridcolor: 'rgba(255,255,255,0.05)', zeroline: false, tickfont: {{ family: 'JetBrains Mono', size: 10, color: '#8B949E' }} }},
-        yaxis2: {{ domain: [0.0, 0.22], side: 'right', gridcolor: 'rgba(255,255,255,0.04)', zeroline: false, tickfont: {{ family: 'JetBrains Mono', size: 8.5, color: '#6E7681' }} }},
-        xaxis: {{ anchor: 'y2', type: 'category', gridcolor: 'rgba(255,255,255,0.05)', tickfont: {{ family: 'JetBrains Mono', size: 9.5, color: '#8B949E' }} }},
-        shapes: [
-          {{ type: 'rect', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: {macro_data['primary_sbr'][0]:.2f}, y1: {macro_data['primary_sbr'][1]:.2f}, fillcolor: 'rgba(255, 82, 82, 0.12)', line: {{ color: 'rgba(255, 82, 82, 0.4)', width: 1, dash: 'dash' }}, layer: 'below' }},
-          {{ type: 'rect', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: {macro_data['primary_rbs'][0]:.2f}, y1: {macro_data['primary_rbs'][1]:.2f}, fillcolor: 'rgba(0, 230, 118, 0.12)', line: {{ color: 'rgba(0, 230, 118, 0.4)', width: 1, dash: 'dash' }}, layer: 'below' }},
-          {{ type: 'line', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: {macro_data['anchors']['pdh']:.2f}, y1: {macro_data['anchors']['pdh']:.2f}, line: {{ color: '#F59E0B', width: 1, dash: 'dot' }} }}
-        ],
-        annotations: [
-          {{ xref: 'paper', yref: 'y1', x: 0.98, y: {macro_data['primary_sbr'][1]:.2f}, text: 'PRIMARY SBR [{macro_data['primary_sbr'][0]:.2f} - {macro_data['primary_sbr'][1]:.2f}]', showarrow: false, font: {{ family: 'Inter', size: 9.5, color: '#FF5252' }}, xanchor: 'right' }},
-          {{ xref: 'paper', yref: 'y1', x: 0.98, y: {macro_data['primary_rbs'][0]:.2f}, text: 'PRIMARY RBS [{macro_data['primary_rbs'][0]:.2f} - {macro_data['primary_rbs'][1]:.2f}]', showarrow: false, font: {{ family: 'Inter', size: 9.5, color: '#00E676' }}, xanchor: 'right' }},
-          {{ x: '22:15', y: 486.50, yref: 'y1', text: '🚀 BUY 486.50 (2B Sweep)', showarrow: true, arrowhead: 2, arrowcolor: '#00E676', ax: 0, ay: 32, bgcolor: '#0D1118', bordercolor: '#00E676', borderwidth: 1, font: {{ family: 'JetBrains Mono', size: 9.5, color: '#00E676' }} }},
-          {{ x: '23:30', y: 488.90, yref: 'y1', text: '🏁 TP 488.90 (+2.40 pt)', showarrow: true, arrowhead: 2, arrowcolor: '#38BDF8', ax: 0, ay: -32, bgcolor: '#0D1118', bordercolor: '#38BDF8', borderwidth: 1, font: {{ family: 'JetBrains Mono', size: 9.5, color: '#38BDF8' }} }}
-        ]
-      }};
-      Plotly.newPlot('chart-station', [traceCandle, traceVolume], layout, {{ responsive: true, displayModeBar: false }});
-    }}
-
-    window.addEventListener('DOMContentLoaded', () => {{
-      renderPlotlyChart();
-      updateAIDrawerContent();
-    }});
-    window.addEventListener('resize', () => {{ Plotly.Plots.resize('chart-station'); }});
-  </script>
-</body>
-</html>
-"""
-
-# 渲染完整机构级独立 DOM (高度锁定 100vh)
-st.components.v1.html(terminal_html, height=880, scrolling=False)
+            <div class="anchor-cell"><div class="anchor-tag">PDH</di
