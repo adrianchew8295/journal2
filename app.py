@@ -45,14 +45,13 @@ with s4:
 
 st.markdown("---")
 
-# 3 个核心 Tab 分工
 tab1, tab2, tab3 = st.tabs([
     "📋 Tab 1: 13 标的宏观雷达与实操持仓罗盘",
     "🎯 Tab 2: 战区座舱 (13行富途代码)",
     "📅 Tab 3: QQQ 2B 同频月历与深度复盘"
 ])
 
-# ================= TAB 1: 宏观雷达与持仓管理 (已挂载输入框与形态学) =================
+# ================= TAB 1: 宏观雷达与持仓管理 =================
 with tab1:
     render_macro_radar_tab()
 
@@ -110,7 +109,6 @@ with tab2:
 with tab3:
     st.subheader("📅 QQQ 2B 同频月历账本与深度复盘 (22:00 - 24:00 MYT)")
     
-    # 昨夜战况核验
     with st.expander(f"⚡ 展开查看【昨夜 ({yesterday_myt_str}) 22:00-24:00 战况极速核验】", expanded=True):
         col_y_btn, col_y_txt = st.columns([1.5, 3])
         with col_y_btn:
@@ -146,7 +144,6 @@ with tab3:
 
     st.markdown("---")
 
-    # 年月选择与账本管理
     c_y, c_m, c_exp = st.columns([1, 1, 2])
     with c_y:
         sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker")
@@ -232,7 +229,6 @@ with tab3:
 
     st.markdown("---")
 
-    # 月历渲染
     cal = calendar.monthcalendar(sel_y, sel_m)
     cols_header = st.columns(7)
     days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
@@ -283,7 +279,6 @@ with tab3:
                     else:
                         st.markdown(f"<div style='border:1px dashed #2d3748; border-radius:6px; padding:6px; height:115px; text-align:center;'><span style='color:#4a5568; font-size:11px;'>{day_num}</span><br><span style='color:#4a5568; font-size:10px;'>-</span></div>", unsafe_allow_html=True)
 
-    # 13 行全量战区参数历史明细表
     st.markdown("---")
     with st.expander(f"🔍 展开查看【{sel_y} 年 {sel_m} 月 13 行全量战区点位与交易历史大表】", expanded=False):
         if not df_month.empty:
@@ -299,7 +294,6 @@ with tab3:
         else:
             st.info("当月暂无历史数据，请点击上方「一键回溯」生成。")
 
-    # 5M 走势与副图 VPA 量价异动双层图表
     st.markdown("---")
     active_date = st.session_state.get("active_chart_date")
     if active_date and not df_month.empty:
