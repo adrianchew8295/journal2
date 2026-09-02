@@ -1,5 +1,5 @@
 # 文件名: app.py
-# 作用: QQQ 战区同频座舱 (Tab 1 宏观雷达 + Tab 2 富途13行参数 + Tab 3 自动战报生成/月历账本/全量历史复盘)
+# 作用: 旗舰级 QQQ 战区座舱 (Tab 1 宏观雷达与持仓输入罗盘 + Tab 2 富途13行参数 + Tab 3 同频月历与深度复盘)
 
 import calendar
 import datetime
@@ -30,14 +30,14 @@ has_8am_report = yesterday_myt_str in df_j["Date_MYT"].astype(str).values if not
 
 st.title("🎯 QQQ 战区与 2B 同频座舱")
 
-# 顶部状态导航
+# 顶部系统状态栏
 s1, s2, s3, s4 = st.columns(4)
 s1.success("✅ 10:00 PM 战区引擎已就绪" if has_10pm_p else "⏳ 10:00 PM 战区引擎等待中")
 s2.success(f"✅ 昨夜战报已交付 ({yesterday_myt_str})" if has_8am_report else f"⏳ 昨夜战报待更新 ({yesterday_myt_str})")
 s3.info("🎯 纪律窗口：22:00 - 24:00 (MYT) | 0.5 ATR 止损 / 1:2 TP")
 
 with s4:
-    if st.button("🧪 全链路自检"):
+    if st.button("🧪 全链路接口自检"):
         with st.spinner("正在检测行情接口..."):
             d1, d5, errs = fetch_raw_data_with_retry(period_5m="5d")
             if errs: st.error("异常: " + "; ".join(errs))
@@ -45,120 +45,108 @@ with s4:
 
 st.markdown("---")
 
-# 3 个核心 Tab
-tab_macro, tab_cockpit, tab_journal = st.tabs([
-    "📡 宏观雷达 (13 标的事实穿透)",
-    "🎯 战区座舱 (13 行富途代码)",
-    "📅 QQQ 2B 同频月历与深度复盘全景"
+# 3 个核心 Tab 分工
+tab1, tab2, tab3 = st.tabs([
+    "📋 Tab 1: 13 标的宏观雷达与实操持仓罗盘",
+    "🎯 Tab 2: 战区座舱 (13行富途代码)",
+    "📅 Tab 3: QQQ 2B 同频月历与深度复盘"
 ])
 
-# ================= TAB 1: 宏观雷达 =================
-with tab_macro:
+# ================= TAB 1: 宏观雷达与持仓管理 (已挂载输入框与形态学) =================
+with tab1:
     render_macro_radar_tab()
 
-# ================= TAB 2: 战区座舱 =================
-with tab_cockpit:
+# ================= TAB 2: 富途 13 行战区代码 =================
+with tab2:
     st.subheader("🎯 QQQ 5M 战区座舱 (含 SBR/SBR2/RBS/RBS2 & 2B)")
     c_t1, c_t2 = st.columns(2)
     c_t1.info("🕒 大马时间 (MYT): " + now_myt.strftime("%Y-%m-%d %H:%M:%S"))
     c_t2.info("🇺🇸 美东时间 (ET): " + now_ny.strftime("%Y-%m-%d %H:%M:%S"))
 
+    if st.button("🔄 随时拉取/计算当前最新战区代码", key="btn_refresh_cockpit_points"):
+        st.cache_data.clear()
+        st.rerun()
+
     if not has_10pm_p:
-        st.warning("🔒 处于日间准备期。大马时间 22:00 准时解锁并生成今晚 13 行战区代码。")
+        st.info("💡 提示：当前处于日间/盘前预览模式。下方数据为基于当前最新行情的即时战区；22:00 将作为后台基准。")
     else:
-        if st.button("🔄 刷新最新点位", key="btn_refresh_cockpit_points"):
-            st.cache_data.clear()
-            st.rerun()
-        d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
-        if d1h is not None:
-            p = compute_futu_13_params(d1h, d5m, now_ny)
-            if p:
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("🎯 QQQ 现价", f"${p['live_price']:.2f}")
-                m2.metric("🚦 三灯信号定调", p["BIAS_DESC"])
-                m3.metric("📈 1H EMA20 均线", f"${p['EMA20_1H']:.2f}")
-                m4.metric("📊 1H ATR 波动", f"${p['ATR_1H']:.2f}")
+        st.success("✅ 22:00 战区引擎已正式就绪。")
 
-                out_lines = [
-                    f"TREND_BIAS := {p['TREND_BIAS']};       {{ 1. QQQ三灯判定: 1=绿灯做多, -1=红灯做空, 0=黄灯防守 }}",
-                    "",
-                    "{ --- 第一梯队主战区 (PRIMARY ZONES) --- }",
-                    f"SBR_TOP := {round(p['SBR_TOP'], 2)}; {{ 2. PRIMARY 1H 阻力顶沿 [{p['SBR_TIME']}] }}",
-                    f"SBR_BOT := {round(p['SBR_BOT'], 2)}; {{ 3. PRIMARY 1H 阻力底沿 [{p['SBR_TIME']}] }}",
-                    f"RBS_TOP := {round(p['RBS_TOP'], 2)}; {{ 4. PRIMARY 1H 支撑顶沿 [{p['RBS_TIME']}] }}",
-                    f"RBS_BOT := {round(p['RBS_BOT'], 2)}; {{ 5. PRIMARY 1H 支撑底沿 [{p['RBS_TIME']}] }}",
-                    "",
-                    "{ --- 第二梯队拓展战区 (SECONDARY ZONES) --- }",
-                    f"SBR2_TOP := {round(p['SBR2_TOP'], 2)}; {{ 6. SECONDARY 1H 更高阻力顶沿 [{p['SBR2_TIME']}] }}",
-                    f"SBR2_BOT := {round(p['SBR2_BOT'], 2)}; {{ 7. SECONDARY 1H 更高阻力底沿 [{p['SBR2_TIME']}] }}",
-                    f"RBS2_TOP := {round(p['RBS2_TOP'], 2)}; {{ 8. SECONDARY 1H 更低支撑顶沿 [{p['RBS2_TIME']}] }}",
-                    f"RBS2_BOT := {round(p['RBS2_BOT'], 2)}; {{ 9. SECONDARY 1H 更低支撑底沿 [{p['RBS2_TIME']}] }}",
-                    "",
-                    "{ --- 全市场客观极值 (SWEEP ANCHORS) --- }",
-                    f"PDH_LINE := {round(p['PDH'], 2)}; {{ 10. 昨日最高价 PDH [{p['PDH_TIME']}] }}",
-                    f"PDL_LINE := {round(p['PDL'], 2)}; {{ 11. 昨日最低价 PDL [{p['PDL_TIME']}] }}",
-                    f"PMH_LINE := {round(p['PMH'], 2)}; {{ 12. 盘前最高价 PMH [{p['PMH_TIME']}] }}",
-                    f"PML_LINE := {round(p['PML'], 2)}; {{ 13. 盘前最低价 PML [{p['PML_TIME']}] }}"
-                ]
-                st.markdown("#### 📋 复制到富途指标顶部 13 行代码 (点击右上角复制):")
-                st.code("\n".join(out_lines), language="pascal")
+    d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
+    if d1h is not None:
+        p = compute_futu_13_params(d1h, d5m, now_ny)
+        if p:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("🎯 QQQ 现价", f"${p['live_price']:.2f}")
+            m2.metric("🚦 三灯信号定调", p["BIAS_DESC"])
+            m3.metric("📈 1H EMA20 均线", f"${p['EMA20_1H']:.2f}")
+            m4.metric("📊 1H ATR 波动", f"${p['ATR_1H']:.2f}")
 
-# ================= TAB 3: 月历账本与全量深度复盘 =================
-with tab_journal:
-    st.subheader("📅 QQQ 2B 同频月历账本与多维复盘 (22:00 - 24:00 MYT)")
+            out_lines = [
+                f"TREND_BIAS := {p['TREND_BIAS']};       {{ 1. QQQ三灯判定: 1=绿灯做多, -1=红灯做空, 0=黄灯防守 }}",
+                "",
+                "{ --- 第一梯队主战区 (PRIMARY ZONES) --- }",
+                f"SBR_TOP := {round(p['SBR_TOP'], 2)}; {{ 2. PRIMARY 1H 阻力顶沿 [{p['SBR_TIME']}] }}",
+                f"SBR_BOT := {round(p['SBR_BOT'], 2)}; {{ 3. PRIMARY 1H 阻力底沿 [{p['SBR_TIME']}] }}",
+                f"RBS_TOP := {round(p['RBS_TOP'], 2)}; {{ 4. PRIMARY 1H 支撑顶沿 [{p['RBS_TIME']}] }}",
+                f"RBS_BOT := {round(p['RBS_BOT'], 2)}; {{ 5. PRIMARY 1H 支撑底沿 [{p['RBS_TIME']}] }}",
+                "",
+                "{ --- 第二梯队拓展战区 (SECONDARY ZONES) --- }",
+                f"SBR2_TOP := {round(p['SBR2_TOP'], 2)}; {{ 6. SECONDARY 1H 更高阻力顶沿 [{p['SBR2_TIME']}] }}",
+                f"SBR2_BOT := {round(p['SBR2_BOT'], 2)}; {{ 7. SECONDARY 1H 更高阻力底沿 [{p['SBR2_TIME']}] }}",
+                f"RBS2_TOP := {round(p['RBS2_TOP'], 2)}; {{ 8. SECONDARY 1H 更低支撑顶沿 [{p['RBS2_TIME']}] }}",
+                f"RBS2_BOT := {round(p['RBS2_BOT'], 2)}; {{ 9. SECONDARY 1H 更低支撑底沿 [{p['RBS2_TIME']}] }}",
+                "",
+                "{ --- 全市场客观极值 (SWEEP ANCHORS) --- }",
+                f"PDH_LINE := {round(p['PDH'], 2)}; {{ 10. 昨日最高价 PDH [{p['PDH_TIME']}] }}",
+                f"PDL_LINE := {round(p['PDL'], 2)}; {{ 11. 昨日最低价 PDL [{p['PDL_TIME']}] }}",
+                f"PMH_LINE := {round(p['PMH'], 2)}; {{ 12. 盘前最高价 PMH [{p['PMH_TIME']}] }}",
+                f"PML_LINE := {round(p['PML'], 2)}; {{ 13. 盘前最低价 PML [{p['PML_TIME']}] }}"
+            ]
+            st.markdown("#### 📋 复制到富途指标顶部 13 行代码 (点击右上角复制):")
+            st.code("\n".join(out_lines), language="pascal")
+
+# ================= TAB 3: 月历账本与深度复盘 =================
+with tab3:
+    st.subheader("📅 QQQ 2B 同频月历账本与深度复盘 (22:00 - 24:00 MYT)")
     
-    # ---------------- 模块 A: 每日自动化复盘与推演战报 (新增功能) ----------------
-    d1h_y, d5m_y, _ = fetch_raw_data_with_retry(period_5m="5d")
-    if d1h_y is not None and d5m_y is not None:
-        dt_y_10pm_myt = tz_myt.localize(datetime.datetime.combine(yesterday_d, datetime.time(22, 0, 0)))
-        cutoff_y_ny = dt_y_10pm_myt.astimezone(tz_ny)
-        window_y_end_ny = cutoff_y_ny + timedelta(hours=2)
-        p_y = compute_futu_13_params(d1h_y, d5m_y, cutoff_y_ny)
+    # 昨夜战况核验
+    with st.expander(f"⚡ 展开查看【昨夜 ({yesterday_myt_str}) 22:00-24:00 战况极速核验】", expanded=True):
+        col_y_btn, col_y_txt = st.columns([1.5, 3])
+        with col_y_btn:
+            if st.button("🔄 刷新昨夜信号核验", key="btn_refresh_yest_box"):
+                st.cache_data.clear()
+                st.rerun()
         
-        if p_y:
-            trades_y, day_5m_y = simulate_trades_with_2b(d5m_y, p_y, cutoff_y_ny, window_y_end_ny)
+        d1h_y, d5m_y, _ = fetch_raw_data_with_retry(period_5m="5d")
+        if d1h_y is not None and d5m_y is not None:
+            dt_y_10pm_myt = tz_myt.localize(datetime.datetime.combine(yesterday_d, datetime.time(22, 0, 0)))
+            cutoff_y_ny = dt_y_10pm_myt.astimezone(tz_ny)
+            window_y_end_ny = cutoff_y_ny + timedelta(hours=2)
             
-            # 自动化总结文本构建
-            bias_val = p_y["TREND_BIAS"]
-            bias_text = "🟢 多头主升 (绿灯)" if bias_val > 0 else ("🔴 空头承压 (红灯)" if bias_val < 0 else "🟡 震荡防守 (黄灯 Bias=0)")
-            
-            if trades_y:
-                t = trades_y[0]
-                trade_result_text = f"触发 {t['Signal']} 信号，入场价 ${t['Entry_Price']:.2f}，出场价 ${t['Exit_Price']:.2f}，盈亏: {t['PnL_Points']:+.2f} pt ({t['Reason']})"
+            p_y = compute_futu_13_params(d1h_y, d5m_y, cutoff_y_ny)
+            if p_y:
+                trades_y, day_5m_y = simulate_trades_with_2b(d5m_y, p_y, cutoff_y_ny, window_y_end_ny)
+                yc1, yc2, yc3, yc4 = st.columns(4)
+                yc1.metric("🚦 昨夜三灯定调", p_y["BIAS_DESC"])
+                yc2.metric("📈 昨夜 1H EMA20", f"${p_y['EMA20_1H']:.2f}")
+                yc3.metric("📊 昨夜 1H ATR", f"${p_y['ATR_1H']:.2f}")
+                
+                if trades_y:
+                    t_first = trades_y[0]
+                    yc4.metric("🎯 昨夜战果", f"{t_first['Result']} ({t_first['PnL_Points']:+.2f} pt)", f"信号: {t_first['Signal']}")
+                    st.dataframe(pd.DataFrame(trades_y)[[c for c in pd.DataFrame(trades_y).columns if not c.endswith("_DT_NY")]], use_container_width=True, hide_index=True)
+                else:
+                    yc4.metric("🎯 昨夜战果", "⚪ 严格空仓", "未触发开仓形态")
+                    st.info("昨夜价格未触及战区准入条件，或未出现 1.25 倍放量 2B/吞没反转，严格执行空仓纪律。")
             else:
-                trade_result_text = "未触发交易。原因：Trend Bias 为 0 均线缠绕锁定开仓，或在 22:00-24:00 窗口内未出现 1.25x 放量 2B 假破底翻/顶翻结构，纪律空仓。"
-
-            ai_summary_md = f"""# 🎯 QQQ 5M 2B 每日战况自动化总结 ({yesterday_myt_str})
-
-### 一、 昨夜战况客观事实复盘
-- **宏观总闸门**: `{bias_text}` | 1H EMA20: `${p_y['EMA20_1H']:.2f}` | 1H ATR: `${p_y['ATR_1H']:.2f}`
-- **关键结构锚点**:
-  - 阻力战区 SBR: `${p_y['SBR_BOT']:.2f} ~ ${p_y['SBR_TOP']:.2f}` | 昨日高点 PDH: `${p_y['PDH']:.2f}`
-  - 支撑战区 RBS: `${p_y['RBS_BOT']:.2f} ~ ${p_y['RBS_TOP']:.2f}` | 昨日低点 PDL: `${p_y['PDL']:.2f}`
-  - 盘前极值: PMH `${p_y['PMH']:.2f}` / PML `${p_y['PML']:.2f}`
-- **执行结果**: {trade_result_text}
-
----
-
-### 二、 未来行情推演与应对策略
-1. **多头爆发条件**: 价格必须放量站稳 SBR 阻力上沿 (`${p_y['SBR_TOP']:.2f}`) 并推动 Bias 翻绿，5M 出现回踩企稳或 2B 突破时做多。
-2. **空头下杀条件**: 价格跌破盘前低点 PML (`${p_y['PML']:.2f}`) 及 RBS 支撑底沿 (`${p_y['RBS_BOT']:.2f}`)，Bias 翻红时反弹做空。
-3. **震荡持续处理**: 若继续在 `${p_y['RBS_BOT']:.2f}` 与 `${p_y['SBR_TOP']:.2f}` 箱体内拉锯且 Bias 为 0，坚决维持空仓观望，杜绝磨损。
-
----
-
-### 三、 交易者下一步行动清单 (Action Plan)
-- 今晚 22:00 (MYT) 前：打开座舱 Tab 1 查看芯片先锋共振度，刷新 Tab 2 提取最新 13 行参数注入富途。
-- 今晚 22:00-24:00：若 Bias=0 关机休息；若 Bias≠0，仅在战区边缘配合 ≥1.25x 量能执行 2B 信号，严格执行 0.5 ATR 止损与 1:2 止盈。
-"""
-            with st.expander(f"🤖 展开查看【{yesterday_myt_str} 每日自动化复盘与推演战报 (可一键复制给 AI)】", expanded=True):
-                st.markdown(ai_summary_md)
-                st.caption("👇 点击下方代码框右上角，一键复制完整战报：")
-                st.code(ai_summary_md, language="markdown")
+                st.warning("昨夜战区参数正在同步中...")
+        else:
+            st.warning("行情接口连接中，请稍候点击刷新。")
 
     st.markdown("---")
 
-    # ---------------- 模块 B: 月历年月选择与四大指标卡 ----------------
+    # 年月选择与账本管理
     c_y, c_m, c_exp = st.columns([1, 1, 2])
     with c_y:
         sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker")
@@ -244,7 +232,7 @@ with tab_journal:
 
     st.markdown("---")
 
-    # ---------------- 模块 C: 月历网格与直达看图 ----------------
+    # 月历渲染
     cal = calendar.monthcalendar(sel_y, sel_m)
     cols_header = st.columns(7)
     days_name = ["周一 (Mon)", "周二 (Tue)", "周三 (Wed)", "周四 (Thu)", "周五 (Fri)", "周六 (Sat)", "周日 (Sun)"]
@@ -295,7 +283,7 @@ with tab_journal:
                     else:
                         st.markdown(f"<div style='border:1px dashed #2d3748; border-radius:6px; padding:6px; height:115px; text-align:center;'><span style='color:#4a5568; font-size:11px;'>{day_num}</span><br><span style='color:#4a5568; font-size:10px;'>-</span></div>", unsafe_allow_html=True)
 
-    # ---------------- 模块 D: 13 行全量战区参数历史明细表 ----------------
+    # 13 行全量战区参数历史明细表
     st.markdown("---")
     with st.expander(f"🔍 展开查看【{sel_y} 年 {sel_m} 月 13 行全量战区点位与交易历史大表】", expanded=False):
         if not df_month.empty:
@@ -311,7 +299,7 @@ with tab_journal:
         else:
             st.info("当月暂无历史数据，请点击上方「一键回溯」生成。")
 
-    # ---------------- 模块 E: 5M 走势与副图 VPA 量价异动双层图表 ----------------
+    # 5M 走势与副图 VPA 量价异动双层图表
     st.markdown("---")
     active_date = st.session_state.get("active_chart_date")
     if active_date and not df_month.empty:
@@ -348,5 +336,3 @@ with tab_journal:
                     day_5m_hist, p_hist, trades_hist, dt_hist_10pm_myt,
                     title_text=f"历史复盘 ({active_date}) | 5M 战场执行与 VPA 量能异动"
                 )
-    else:
-        st.info("💡 请在上方月历点击任意日期的「🔍 查图」，或点击上方快捷胶囊直接展示图表。")
