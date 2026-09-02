@@ -1,5 +1,5 @@
 # 文件名: app.py
-# 作用: 癸水 · QQQ 战区座舱（4 大独立垂直 Tab 导航 + 独立资金持仓滚动罗盘）
+# 作用: 癸水 · QQQ 战区座舱（4 大垂直 Tab + 战区 13 行手动覆盖更新 + 全量 Table 战术高亮着色）
 
 import calendar
 import datetime
@@ -24,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. 注入大字号、高对比暗黑护眼 CSS
+# 2. 注入针对 41 岁护眼的大字号、高对比暗黑 CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700;800&family=Noto+Serif+SC:wght@700;900&display=swap');
@@ -199,9 +199,9 @@ with col_main:
         p_dict = res_p.get("price_lookup", {}) if (res_p and isinstance(res_p, dict)) else {}
         render_portfolio_expansion(price_dict=p_dict)
 
-    # ================= TAB 3: 战区富途代码 =================
+    # ================= TAB 3: 战区富途代码 (含手动微调/覆盖更新) =================
     elif st.session_state["active_main_tab"] == "tab3_cockpit":
-        st.subheader("🎯 QQQ 5M 战区座舱 (实时/历史 13 行富途指标代码)")
+        st.subheader("🎯 QQQ 5M 战区座舱 (富途 13 行指标代码)")
         
         df_journal_all = load_journal()
         recorded_dates = sorted(list(set(df_journal_all["Date_MYT"].dropna().astype(str).values)), reverse=True) if not df_journal_all.empty else []
@@ -265,6 +265,36 @@ with col_main:
             m3.metric("📈 1H EMA20 均线", f"${p_to_display['EMA20_1H']:.2f}")
             m4.metric("📊 1H ATR 波动", f"${p_to_display['ATR_1H']:.2f}")
 
+            # ---------------- 关键恢复：战区 13 行手动覆盖/微调面板 ----------------
+            with st.expander("⚙️ 手动微调 / 覆盖当前 13 行战区参数", expanded=False):
+                st.caption("允许交易员根据盘感或消息面手动修正 SBR/RBS 与多空三灯，点击保存后实时生效。")
+                c_m1, c_m2, c_m3 = st.columns(3)
+                with c_m1:
+                    m_bias = st.selectbox("1. TREND_BIAS (三灯定调)", options=[1, 0, -1], index=0 if p_to_display['TREND_BIAS']==1 else (1 if p_to_display['TREND_BIAS']==0 else 2), format_func=lambda x: "🟢 1 (多头绿灯)" if x==1 else ("🟡 0 (震荡防守)" if x==0 else "🔴 -1 (空头红灯)"))
+                    m_sbr_top = st.number_input("2. SBR_TOP (1H 阻力顶沿)", value=float(p_to_display['SBR_TOP']), step=0.5)
+                    m_sbr_bot = st.number_input("3. SBR_BOT (1H 阻力底沿)", value=float(p_to_display['SBR_BOT']), step=0.5)
+                with c_m2:
+                    m_rbs_top = st.number_input("4. RBS_TOP (1H 支撑顶沿)", value=float(p_to_display['RBS_TOP']), step=0.5)
+                    m_rbs_bot = st.number_input("5. RBS_BOT (1H 支撑底沿)", value=float(p_to_display['RBS_BOT']), step=0.5)
+                    m_pdh = st.number_input("10. PDH_LINE (昨日最高价)", value=float(p_to_display['PDH']), step=0.5)
+                with c_m3:
+                    m_pdl = st.number_input("11. PDL_LINE (昨日最低价)", value=float(p_to_display['PDL']), step=0.5)
+                    m_pmh = st.number_input("12. PMH_LINE (盘前最高价)", value=float(p_to_display['PMH']), step=0.5)
+                    m_pml = st.number_input("13. PML_LINE (盘前最低价)", value=float(p_to_display['PML']), step=0.5)
+
+                if st.button("💾 保存并应用手动微调参数", key="btn_apply_manual_p13"):
+                    p_to_display['TREND_BIAS'] = m_bias
+                    p_to_display['BIAS_DESC'] = "🟢 绿灯 (做多为主)" if m_bias == 1 else ("🔴 红灯 (做空为主)" if m_bias == -1 else "🟡 黄灯 (震荡防守)")
+                    p_to_display['SBR_TOP'] = m_sbr_top
+                    p_to_display['SBR_BOT'] = m_sbr_bot
+                    p_to_display['RBS_TOP'] = m_rbs_top
+                    p_to_display['RBS_BOT'] = m_rbs_bot
+                    p_to_display['PDH'] = m_pdh
+                    p_to_display['PDL'] = m_pdl
+                    p_to_display['PMH'] = m_pmh
+                    p_to_display['PML'] = m_pml
+                    st.success("✅ 手动参数已成功覆盖并生效！")
+
             out_lines = [
                 f"TREND_BIAS := {p_to_display['TREND_BIAS']};       {{ 1. QQQ三灯判定: 1=绿灯做多, -1=红灯做空, 0=黄灯防守 }}",
                 "",
@@ -293,6 +323,7 @@ with col_main:
     elif st.session_state["active_main_tab"] == "tab4_journal":
         st.subheader("📅 QQQ 2B 同频月历账本与多维复盘 (22:00 - 24:00 MYT)")
         
+        # 模块 A: 昨夜战况核验 (彩色 Table)
         with st.expander(f"⚡ 展开查看【昨夜 ({yesterday_myt_str}) 22:00-24:00 战况极速核验】", expanded=True):
             d1h_y, d5m_y, _ = fetch_raw_data_with_retry(period_5m="5d")
             if d1h_y is not None and d5m_y is not None:
@@ -311,7 +342,19 @@ with col_main:
                     if trades_y:
                         t_first = trades_y[0]
                         yc4.metric("🎯 昨夜战果", f"{t_first['Result']} ({t_first['PnL_Points']:+.2f} pt)", f"信号: {t_first['Signal']}")
-                        st.dataframe(pd.DataFrame(trades_y)[[c for c in pd.DataFrame(trades_y).columns if not c.endswith("_DT_NY")]], use_container_width=True, hide_index=True)
+                        df_y_show = pd.DataFrame(trades_y)[[c for c in pd.DataFrame(trades_y).columns if not c.endswith("_DT_NY")]]
+                        
+                        # 战报表格色彩增强
+                        def style_yest_table(row):
+                            styles = [""] * len(row)
+                            if "PnL_Points" in df_y_show.columns:
+                                p_idx = df_y_show.columns.get_loc("PnL_Points")
+                                p_v = row["PnL_Points"]
+                                if p_v > 0: styles[p_idx] = "color: #34D399; font-weight: bold; font-family: 'JetBrains Mono';"
+                                elif p_v < 0: styles[p_idx] = "color: #F87171; font-weight: bold; font-family: 'JetBrains Mono';"
+                            return styles
+                            
+                        st.dataframe(df_y_show.style.apply(style_yest_table, axis=1), use_container_width=True, hide_index=True)
                     else:
                         yc4.metric("🎯 昨夜战果", "⚪ 严格空仓", "未触发开仓形态")
                         st.info("昨夜价格未触及战区准入条件，或未出现 1.25 倍放量 2B/吞没反转，严格执行空仓纪律。")
@@ -385,6 +428,7 @@ with col_main:
         valid_trades = df_month[df_month["Signal"] != "NO_TRADE"] if not df_month.empty else pd.DataFrame()
         total_trades = len(valid_trades)
         win_trades = len(valid_trades[valid_trades["PnL_Points"] > 0]) if total_trades > 0 else 0
+        loss_trades = len(valid_trades[valid_trades["PnL_Points"] < 0]) if total_trades > 0 else 0
         win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0.0
         net_pnl = df_month["PnL_Points"].sum() if not df_month.empty else 0.0
         empty_days = len(df_month[df_month["Signal"] == "NO_TRADE"]) if not df_month.empty else 0
@@ -500,7 +544,18 @@ with col_main:
             else:
                 st.info("💡 点击左侧月历中任意一天的「🔍 查图」，此处将实时联动展示战术明细。")
 
-        # 模块 D: 13 行全量战区参数历史大表
+            st.markdown("---")
+            total_days_cnt = max(len(df_month), 1)
+            discipline_rate = (empty_days / total_days_cnt) * 100
+            st.write(f"🛡️ **空仓防守率**: `{discipline_rate:.1f}%`")
+            st.write(f"🎯 **开仓出手率**: `{100 - discipline_rate:.1f}%`")
+            if total_trades > 0:
+                avg_win = valid_trades[valid_trades["PnL_Points"] > 0]["PnL_Points"].mean() if win_trades > 0 else 0.0
+                avg_loss = abs(valid_trades[valid_trades["PnL_Points"] < 0]["PnL_Points"].mean()) if loss_trades > 0 else 0.0
+                pnl_ratio = (avg_win / avg_loss) if avg_loss > 0 else (avg_win if avg_win > 0 else 1.0)
+                st.write(f"⚖️ **实操盈亏比**: `{pnl_ratio:.2f} : 1`")
+
+        # 模块 D: 13 行全量战区参数历史大表 (战术色彩强化)
         st.markdown("---")
         with st.expander(f"🔍 展开查看【{sel_y} 年 {sel_m} 月 13 行全量战区点位与交易历史大表】", expanded=False):
             if not df_month.empty:
@@ -512,7 +567,23 @@ with col_main:
                     "Signal", "Entry_MYT", "Exit_MYT", "Entry_Price", "Exit_Price", "SL", "TP", "PnL_Points", "Reason", "Result"
                 ]
                 valid_show_cols = [c for c in cols_13_order if c in df_month.columns]
-                st.dataframe(df_month[valid_show_cols].sort_values(by="Date_MYT", ascending=False), use_container_width=True, hide_index=True)
+                df_history_show = df_month[valid_show_cols].sort_values(by="Date_MYT", ascending=False)
+
+                def style_history_table(row):
+                    styles = [""] * len(row)
+                    if "PnL_Points" in df_history_show.columns:
+                        p_idx = df_history_show.columns.get_loc("PnL_Points")
+                        p_v = row["PnL_Points"]
+                        if p_v > 0: styles[p_idx] = "color: #34D399; font-weight: bold; font-family: 'JetBrains Mono';"
+                        elif p_v < 0: styles[p_idx] = "color: #F87171; font-weight: bold; font-family: 'JetBrains Mono';"
+                    if "TREND_BIAS" in df_history_show.columns:
+                        b_idx = df_history_show.columns.get_loc("TREND_BIAS")
+                        b_v = row["TREND_BIAS"]
+                        if b_v == 1: styles[b_idx] = "color: #34D399; font-weight: bold;"
+                        elif b_v == -1: styles[b_idx] = "color: #F87171; font-weight: bold;"
+                    return styles
+
+                st.dataframe(df_history_show.style.apply(style_history_table, axis=1), use_container_width=True, hide_index=True)
             else:
                 st.info("当月暂无历史数据，请点击上方「一键回溯」生成。")
 
