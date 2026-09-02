@@ -452,6 +452,24 @@ def render_macro_radar_tab():
     bull_cnt = res["bull_count"]
     bear_cnt = res["bear_count"]
 
+    # 1. 顶部导入
+from portfolio_manager_plugin import render_portfolio_expansion
+
+# 2. 在 render_macro_radar_tab() 函数最底部调用:
+price_lookup = {}
+for _, r in df_show.iterrows():
+    s_raw = r["标的"].split()[0]
+    price_lookup[s_raw] = {
+        "price": float(r["现价 ($)"]),
+        "phase": r["轮动阶段"],
+        "buy_zone": r["买入建仓区间 (Buy)"],
+        "sell_zone": r["减仓卖出区间 (Sell)"],
+    }
+
+# 挂载包含输入框与形态学诊断的持仓罗盘
+render_portfolio_expansion(df_show, price_lookup, d_daily)
+
+
     # 1. 顶层：QQQ 大盘宏观指标条
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("🎯 QQQ 现价", f"${res['qqq_curr']:.2f}", f"{res['qqq_chg_d']:+.2f}%")
