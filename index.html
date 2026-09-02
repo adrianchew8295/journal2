@@ -1,257 +1,456 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>AlphaCockpit Pro — Institutional Terminal</title>
+  <title>癸水 · 量化战略座舱 | GUI SHUI QUANT</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
   <style>
     :root {
-      --bg-canvas: #080B10;
-      --surface-card: rgba(18, 24, 38, 0.75);
-      --surface-hover: rgba(255, 255, 255, 0.04);
-      --border-subtle: rgba(255, 255, 255, 0.08);
+      --bg-canvas: #06090E;
+      --surface-card: rgba(14, 20, 32, 0.85);
+      --surface-hover: rgba(255, 255, 255, 0.05);
+      --border-subtle: rgba(255, 255, 255, 0.10);
+      --border-glow: rgba(56, 189, 248, 0.35);
+      
+      --gui-water-cyan: #38BDF8;
+      --gui-water-deep: #0284C7;
+      --gui-gold: #F59E0B;
+      
       --bull: #00E676;
-      --bull-bg: rgba(0, 230, 118, 0.12);
+      --bull-bg: rgba(0, 230, 118, 0.14);
       --bear: #FF5252;
-      --bear-bg: rgba(255, 82, 82, 0.12);
-      --warn: #F59E0B;
-      --warn-bg: rgba(245, 158, 11, 0.12);
-      --accent: #38BDF8;
-      --text-main: #E6EDF3;
-      --text-muted: #8B949E;
-      --text-dim: #6E7681;
+      --bear-bg: rgba(255, 82, 82, 0.14);
+      
+      --text-main: #FFFFFF;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+      
       --font-mono: 'JetBrains Mono', monospace;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-sans: 'Inter', -apple-system, sans-serif;
+      --font-chinese: 'Noto Serif SC', 'Songti SC', serif;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    
     html, body {
       width: 100vw; height: 100vh; max-height: 100vh; overflow: hidden;
       background-color: var(--bg-canvas); color: var(--text-main);
-      font-family: var(--font-sans); font-size: 12px; line-height: 1.3;
+      font-family: var(--font-sans); font-size: 13px; line-height: 1.4;
       -webkit-font-smoothing: antialiased;
     }
-    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
 
     #app-container {
       display: flex; flex-direction: column; width: 100vw; height: 100vh;
-      background: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.03) 0%, transparent 60%), var(--bg-canvas);
+      background: radial-gradient(circle at 50% 0%, rgba(2, 132, 199, 0.08) 0%, transparent 70%), var(--bg-canvas);
     }
+
+    /* 顶部 56px 大字 HUD */
     #top-hud {
-      height: 42px; min-height: 42px; display: flex; align-items: center;
-      justify-content: space-between; padding: 0 14px; background: var(--surface-card);
-      border-bottom: 1px solid var(--border-subtle); backdrop-filter: blur(16px); z-index: 20;
+      height: 56px; min-height: 56px; display: flex; align-items: center;
+      justify-content: space-between; padding: 0 18px; background: var(--surface-card);
+      border-bottom: 1px solid var(--border-subtle); backdrop-filter: blur(20px); z-index: 20;
     }
-    .hud-left, .hud-center, .hud-right { display: flex; align-items: center; gap: 12px; }
-    .brand-tag { font-weight: 800; font-size: 12px; letter-spacing: 0.08em; color: #fff; display: flex; align-items: center; gap: 6px; }
-    .brand-tag span { background: linear-gradient(135deg, var(--accent), #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .clock-group { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.3); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-subtle); }
-    .clock-item { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-    .clock-item b { color: var(--text-main); }
-    .session-pill { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 12px; background: var(--bull-bg); border: 1px solid rgba(0, 230, 118, 0.3); color: var(--bull); font-size: 10px; font-weight: 700; }
-    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bull); box-shadow: 0 0 8px var(--bull); animation: pulse-dot 1.8s infinite; }
-    .verdict-banner { padding: 4px 12px; border-radius: 4px; background: rgba(0, 230, 118, 0.08); border: 1px solid rgba(0, 230, 118, 0.25); font-weight: 600; font-size: 11px; color: var(--bull); white-space: nowrap; }
-    .hud-metrics { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 11px; }
-    .hud-metric-val { font-weight: 700; color: #fff; }
+
+    .brand-container {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .brand-logo-svg {
+      width: 38px; height: 38px;
+      filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+    }
+    .brand-title {
+      font-family: var(--font-chinese);
+      font-size: 20px; font-weight: 900; letter-spacing: 0.12em;
+      background: linear-gradient(135deg, #FFFFFF 20%, #BAE6FD 60%, var(--gui-water-cyan) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .brand-subtitle {
+      font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+      color: var(--gui-water-cyan); letter-spacing: 0.18em;
+    }
+
+    .clock-deck {
+      display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.4);
+      padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border-subtle);
+    }
+    .clock-item { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); }
+    .clock-item b { color: #FFFFFF; font-size: 14px; font-weight: 700; }
+
+    .session-badge {
+      display: flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 20px;
+      background: var(--bull-bg); border: 1px solid rgba(0, 230, 118, 0.4);
+      color: var(--bull); font-size: 12px; font-weight: 800; letter-spacing: 0.04em;
+    }
+    .pulse-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--bull);
+      box-shadow: 0 0 10px var(--bull); animation: pulse 1.8s infinite;
+    }
+
+    .verdict-box {
+      padding: 6px 16px; border-radius: 6px;
+      background: rgba(0, 230, 118, 0.1); border: 1px solid rgba(0, 230, 118, 0.35);
+      font-size: 14px; font-weight: 700; color: var(--bull); white-space: nowrap;
+    }
+
+    .price-pill {
+      display: flex; align-items: center; gap: 14px; font-family: var(--font-mono);
+    }
+    .live-num { font-size: 18px; font-weight: 800; color: #FFFFFF; }
+
     .btn-ai-pump {
-      display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 4px;
-      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2));
-      border: 1px solid var(--accent); color: #fff; font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; gap: 8px; padding: 7px 16px; border-radius: 6px;
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.3), rgba(56, 189, 248, 0.3));
+      border: 1px solid var(--gui-water-cyan); color: #FFFFFF; font-weight: 700; font-size: 13px;
+      cursor: pointer; transition: all 0.2s; box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
     }
-    .btn-ai-pump:hover { background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(129, 140, 248, 0.35)); box-shadow: 0 0 12px rgba(56, 189, 248, 0.3); }
-    .kbd-shortcut { background: rgba(0,0,0,0.4); padding: 1px 4px; border-radius: 3px; font-size: 9px; color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.4); }
-
-    #main-deck { display: flex; flex: 1; height: calc(100vh - 42px); width: 100vw; overflow: hidden; }
-    #mini-rail { width: 46px; min-width: 46px; background: #090D14; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 16px; z-index: 10; }
-    .rail-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; font-size: 14px; }
-    .rail-btn:hover, .rail-btn.active { color: var(--accent); background: rgba(56, 189, 248, 0.1); }
-
-    #left-tactical { width: 28%; min-width: 310px; max-width: 380px; background: var(--surface-card); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; backdrop-filter: blur(16px); }
-    .tactical-zones { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border-subtle); background: rgba(13, 17, 24, 0.6); }
-    .zone-row { display: flex; gap: 8px; }
-    .zone-card { flex: 1; padding: 6px 10px; border-radius: 4px; background: rgba(18, 24, 38, 0.9); border: 1px solid var(--border-subtle); }
-    .zone-card.sbr { border-left: 3px solid var(--bear); }
-    .zone-card.rbs { border-left: 3px solid var(--bull); }
-    .zone-label { font-size: 9px; font-weight: 700; color: var(--text-muted); display: flex; justify-content: space-between; }
-    .zone-range { font-family: var(--font-mono); font-size: 13px; font-weight: 700; margin-top: 2px; color: var(--text-main); }
-    .anchors-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-    .anchor-cell { background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); padding: 3px 4px; border-radius: 3px; text-align: center; }
-    .anchor-tag { font-size: 8.5px; color: var(--text-dim); font-weight: 700; }
-    .anchor-val { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: #cbd5e1; }
-
-    .core13-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .core13-header { height: 24px; display: flex; align-items: center; padding: 0 10px; font-size: 9.5px; font-weight: 700; color: var(--text-dim); border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.25); }
-    .core13-body { flex: 1; overflow-y: auto; }
-    .core-row { height: 27px; min-height: 27px; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,0.03); font-family: var(--font-mono); font-size: 11px; }
-    .core-row:hover { background: var(--surface-hover); }
-    .col-sym { width: 50px; font-weight: 700; color: #fff; font-family: var(--font-sans); }
-    .col-tier { width: 26px; font-size: 9px; color: var(--text-dim); }
-    .col-price { width: 58px; text-align: right; color: var(--text-main); font-weight: 500; }
-    .col-chg { width: 52px; text-align: right; font-weight: 600; }
-    .col-tag { flex: 1; text-align: right; font-size: 10px; font-family: var(--font-sans); font-weight: 600; }
-    .tag-bull { color: var(--bull); }
-    .tag-bear { color: var(--bear); }
-    .tag-neutral { color: var(--text-muted); }
-
-    #right-workspace { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-canvas); position: relative; }
-    #track-strip { height: 34px; min-height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; background: #090D14; border-bottom: 1px solid var(--border-subtle); gap: 12px; }
-    .weekday-pills { display: flex; align-items: center; gap: 6px; }
-    .day-pill { display: flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); font-size: 10.5px; font-family: var(--font-mono); cursor: pointer; }
-    .day-pill.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.1); }
-    .day-pill .name { font-weight: 700; color: var(--text-muted); font-family: var(--font-sans); }
-    .day-pill .pnl-pos { color: var(--bull); font-weight: 700; }
-    .day-pill .pnl-neg { color: var(--bear); font-weight: 700; }
-    .day-pill .pnl-flat { color: var(--text-dim); }
-    .day-summary-banner { display: flex; align-items: center; gap: 12px; font-size: 10.5px; color: var(--text-muted); }
-    .day-summary-banner b { color: var(--text-main); font-family: var(--font-mono); }
-
-    #chart-station { flex: 1; width: 100%; height: calc(100% - 34px); position: relative; }
-
-    /* 专业看盘浮动工具条美化 */
-    .js-plotly-plot .plotly .modebar {
-      top: 10px !important;
-      right: 16px !important;
-      background: rgba(13, 17, 24, 0.85) !important;
-      border: 1px solid rgba(255,255,255,0.1) !important;
-      border-radius: 4px !important;
-      padding: 2px 4px !important;
+    .btn-ai-pump:hover {
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.5), rgba(56, 189, 248, 0.5));
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.4);
     }
-    .js-plotly-plot .plotly .modebar-btn svg { fill: #8B949E !important; }
-    .js-plotly-plot .plotly .modebar-btn:hover svg { fill: #38BDF8 !important; }
+    .kbd-tag {
+      background: rgba(0,0,0,0.5); padding: 1px 6px; border-radius: 4px;
+      font-size: 11px; color: var(--gui-water-cyan); border: 1px solid var(--border-glow);
+    }
 
+    /* 主工作台 (32% 左战区 + 68% 右工作区) */
+    #main-workspace {
+      display: flex; flex: 1; height: calc(100vh - 56px); width: 100vw; overflow: hidden;
+    }
+
+    /* 左侧战区 */
+    #left-deck {
+      width: 32%; min-width: 360px; max-width: 440px; background: var(--surface-card);
+      border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column;
+      overflow: hidden; backdrop-filter: blur(20px);
+    }
+
+    .tactical-card-wrap {
+      padding: 14px; display: flex; flex-direction: column; gap: 10px;
+      border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.25);
+    }
+    .zone-box {
+      padding: 10px 14px; border-radius: 6px; background: rgba(22, 30, 48, 0.8);
+      border: 1px solid var(--border-subtle);
+    }
+    .zone-box.sbr { border-left: 4px solid var(--bear); }
+    .zone-box.rbs { border-left: 4px solid var(--bull); }
+    .zone-title {
+      font-size: 11px; font-weight: 800; color: var(--text-muted);
+      display: flex; justify-content: space-between;
+    }
+    .zone-digits {
+      font-family: var(--font-mono); font-size: 18px; font-weight: 800; margin-top: 4px; color: #FFFFFF;
+    }
+
+    .anchors-quad {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+    }
+    .quad-item {
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle);
+      padding: 6px 4px; border-radius: 4px; text-align: center;
+    }
+    .quad-label { font-size: 10px; color: var(--text-dim); font-weight: 800; }
+    .quad-val { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: #E2E8F0; }
+
+    /* Core 13 列表 (大字清晰) */
+    .core13-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .core13-head {
+      height: 32px; display: flex; align-items: center; padding: 0 14px;
+      font-size: 11px; font-weight: 800; color: var(--text-muted);
+      border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.3);
+    }
+    .core13-rows { flex: 1; overflow-y: auto; }
+    .core-item {
+      height: 34px; display: flex; align-items: center; padding: 0 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.04); font-family: var(--font-mono); font-size: 13px;
+      transition: background 0.15s;
+    }
+    .core-item:hover { background: var(--surface-hover); }
+    .c-sym { width: 65px; font-weight: 800; color: #FFFFFF; }
+    .c-tier { width: 32px; font-size: 11px; color: var(--text-dim); }
+    .c-price { width: 75px; text-align: right; color: #FFFFFF; font-weight: 600; }
+    .c-chg { width: 70px; text-align: right; font-weight: 700; }
+    .c-tag { flex: 1; text-align: right; font-size: 12px; font-weight: 700; font-family: var(--font-sans); }
+
+    /* 右侧主视口 (68%) */
+    #right-deck {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-canvas);
+    }
+
+    /* 顶部大标签切换导航 */
+    .view-switch-strip {
+      height: 46px; min-height: 46px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px; background: #0A0E17; border-bottom: 1px solid var(--border-subtle);
+    }
+    .tabs-group { display: flex; align-items: center; gap: 8px; }
+    .nav-tab-btn {
+      padding: 6px 16px; border-radius: 6px; background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 13px;
+      font-weight: 700; cursor: pointer; transition: all 0.2s;
+    }
+    .nav-tab-btn:hover { color: #FFFFFF; background: rgba(255,255,255,0.08); }
+    .nav-tab-btn.active {
+      background: rgba(2, 132, 199, 0.25); border-color: var(--gui-water-cyan); color: #FFFFFF;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+    }
+
+    /* 三大主视角容器 */
+    .view-content-pane { flex: 1; width: 100%; height: calc(100% - 46px); display: none; overflow: hidden; position: relative; }
+    .view-content-pane.active { display: flex; flex-direction: column; }
+
+    /* 视角 1: 图表 */
+    #chart-canvas { flex: 1; width: 100%; height: 100%; }
+
+    /* 视角 2: 宏观罗盘 */
+    .radar-container {
+      flex: 1; padding: 18px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+    .radar-card {
+      background: var(--surface-card); border: 1px solid var(--border-subtle);
+      border-radius: 8px; padding: 16px;
+    }
+    .radar-title { font-size: 15px; font-weight: 800; color: #FFFFFF; margin-bottom: 12px; display: flex; justify-content: space-between; }
+
+    /* 视角 3: 纪律月历 */
+    .journal-container {
+      flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+    }
+    .calendar-matrix {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
+    }
+    .cal-cell {
+      height: 90px; background: rgba(22, 30, 48, 0.6); border: 1px solid var(--border-subtle);
+      border-radius: 6px; padding: 8px; display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .cal-cell.win { background: rgba(6, 78, 59, 0.7); border-color: #10B981; }
+    .cal-cell.loss { background: rgba(127, 29, 29, 0.7); border-color: #EF4444; }
+
+    /* 右侧 AI 抽屉 */
     #ai-drawer {
-      position: fixed; top: 0; right: -480px; width: 460px; height: 100vh;
-      background: rgba(13, 17, 24, 0.95); border-left: 1px solid rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(24px); box-shadow: -10px 0 30px rgba(0, 0, 0, 0.6);
+      position: fixed; top: 0; right: -500px; width: 480px; height: 100vh;
+      background: rgba(10, 14, 23, 0.96); border-left: 1px solid rgba(56, 189, 248, 0.3);
+      backdrop-filter: blur(28px); box-shadow: -12px 0 35px rgba(0, 0, 0, 0.7);
       display: flex; flex-direction: column; z-index: 100; transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1);
     }
     #ai-drawer.open { right: 0; }
-    .drawer-header { height: 48px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); }
-    .drawer-title { font-weight: 700; font-size: 13px; color: #fff; display: flex; align-items: center; gap: 8px; }
-    .btn-close { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 4px; }
-    .drawer-actions { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.25); display: flex; gap: 8px; }
-    .btn-copy-all { flex: 1; padding: 7px 12px; background: linear-gradient(135deg, #0284c7, #4f46e5); border: none; border-radius: 4px; color: #fff; font-weight: 600; font-size: 11px; cursor: pointer; }
-    .drawer-body { flex: 1; padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
-    .prompt-block { background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; color: #cbd5e1; }
-    .prompt-block-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 700; font-size: 10.5px; color: var(--text-muted); }
+    .drawer-top {
+      height: 56px; padding: 0 18px; display: flex; align-items: center;
+      justify-content: space-between; border-bottom: 1px solid var(--border-subtle);
+    }
+    .drawer-title { font-size: 15px; font-weight: 800; color: #FFFFFF; display: flex; align-items: center; gap: 8px; }
+    .drawer-scroll { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+    .prompt-card {
+      background: rgba(0, 0, 0, 0.45); border: 1px solid var(--border-subtle); border-radius: 8px;
+      padding: 12px 14px; font-family: var(--font-mono); font-size: 13px; line-height: 1.5; color: #E2E8F0;
+    }
 
-    .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 10px; font-size: 9.5px; font-weight: 700; }
-    .status-badge.computing { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(245, 158, 11, 0.35); animation: pulse-warn 1.5s infinite; }
-    .status-badge.completed { background: var(--bull-bg); color: var(--bull); border: 1px solid rgba(0, 230, 118, 0.35); }
+    /* 模式条 Modebar 美化 */
+    .js-plotly-plot .plotly .modebar {
+      top: 12px !important; right: 20px !important; background: rgba(10, 14, 23, 0.85) !important;
+      border: 1px solid rgba(255,255,255,0.15) !important; border-radius: 6px !important;
+    }
+    .js-plotly-plot .plotly .modebar-btn svg { fill: #94A3B8 !important; }
+    .js-plotly-plot .plotly .modebar-btn:hover svg { fill: var(--gui-water-cyan) !important; }
 
-    @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
-    @keyframes pulse-warn { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-
-    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(50px); background: #0284c7; color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600; opacity: 0; transition: all 0.25s ease; z-index: 1000; }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+    #toast {
+      position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%) translateY(60px);
+      background: var(--gui-water-deep); color: #FFFFFF; padding: 8px 20px; border-radius: 30px;
+      font-size: 13px; font-weight: 700; opacity: 0; transition: all 0.25s ease; z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    }
     #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
   </style>
 </head>
 <body>
+
   <div id="app-container">
+    
+    <!-- 顶部大字 HUD -->
     <header id="top-hud">
-      <div class="hud-left">
-        <div class="brand-tag">ALPHA<span>COCKPIT</span> <span style="font-size: 9px; color: var(--text-dim); font-weight: 500;">PRO</span></div>
-        <div class="clock-group">
-          <div class="clock-item">MYT <b id="clock-myt">--:--:--</b></div>
-          <span style="color: var(--border-subtle);">|</span>
-          <div class="clock-item">ET <b id="clock-et">--:--:--</b></div>
+      <div class="brand-container">
+        <!-- 癸水 专属霸气矢量 Logo (太极坎卦水龙印) -->
+        <svg class="brand-logo-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="46" stroke="url(#gui_grad_gold)" stroke-width="2" stroke-dasharray="6 3"/>
+          <path d="M50 8 A42 42 0 0 1 50 92 A21 21 0 0 1 50 50 A21 21 0 0 0 50 8 Z" fill="url(#gui_water_flow)" opacity="0.85"/>
+          <circle cx="50" cy="29" r="6" fill="#BAE6FD"/>
+          <circle cx="50" cy="71" r="6" fill="#0369A1"/>
+          <!-- 易经 · 坎卦（水）符号 -->
+          <line x1="28" y1="46" x2="40" y2="46" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+          <line x1="60" y1="46" x2="72" y2="46" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+          <line x1="28" y1="50" x2="72" y2="50" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+          <line x1="28" y1="54" x2="40" y2="54" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+          <line x1="60" y1="54" x2="72" y2="54" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="gui_grad_gold" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#F59E0B"/><stop offset="1" stop-color="#38BDF8"/>
+            </linearGradient>
+            <linearGradient id="gui_water_flow" x1="50" y1="8" x2="50" y2="92" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#38BDF8"/><stop offset="1" stop-color="#0369A1"/>
+            </linearGradient>
+          </defs>
+        </svg>
+
+        <div>
+          <div class="brand-title">癸 水</div>
+          <div class="brand-subtitle">GUI SHUI QUANT</div>
         </div>
-        <div class="session-pill"><div class="status-dot"></div>22:00-24:00 MYT WINDOW ACTIVE</div>
       </div>
-      <div class="hud-center">
-        <div class="verdict-banner" id="hud-verdict">--</div>
+
+      <div class="clock-deck">
+        <div class="clock-item">MYT <b id="clock-myt">--:--:--</b></div>
+        <span style="color: var(--border-subtle);">|</span>
+        <div class="clock-item">ET <b id="clock-et">--:--:--</b></div>
       </div>
-      <div class="hud-right">
-        <div class="hud-metrics">
-          <div>QQQ: <span class="hud-metric-val" id="hud-qqq">--</span></div>
-          <div>ATR%: <span class="hud-metric-val" id="hud-atr" style="color: var(--accent);">--</span></div>
-        </div>
-        <button class="btn-ai-pump" onclick="toggleAIDrawer()">AI DATA PUMP <span class="kbd-shortcut">SPACE</span></button>
+
+      <div class="session-badge">
+        <div class="pulse-dot"></div>
+        22:00-24:00 战区执行窗口
       </div>
+
+      <div class="verdict-box" id="hud-verdict">--</div>
+
+      <div class="price-pill">
+        <div>QQQ: <span class="live-num" id="hud-qqq">--</span></div>
+        <div style="font-size: 13px; color: var(--text-muted);">ATR: <b id="hud-atr" style="color: var(--gui-water-cyan);">--</b></div>
+      </div>
+
+      <button class="btn-ai-pump" onclick="toggleAIDrawer()">
+        ⚡ AI 战略数据注入 <span class="kbd-tag">SPACE</span>
+      </button>
     </header>
 
-    <div id="main-deck">
-      <nav id="mini-rail">
-        <div class="rail-btn active" title="Cockpit Deck">⊞</div>
-        <div class="rail-btn" title="Sync Futu 13 Lines" onclick="copyFutuLines()">⚡</div>
-        <div class="rail-btn" style="margin-top: auto;" title="Connected">●</div>
-      </nav>
-
-      <aside id="left-tactical">
-        <div class="tactical-zones">
-          <div class="zone-row">
-            <div class="zone-card sbr">
-              <div class="zone-label"><span>PRIMARY SBR</span> <span>1H 阻力</span></div>
-              <div class="zone-range" id="deck-sbr">--</div>
-            </div>
-            <div class="zone-card rbs">
-              <div class="zone-label"><span>PRIMARY RBS</span> <span>1H 支撑</span></div>
-              <div class="zone-range" id="deck-rbs">--</div>
-            </div>
+    <!-- 主工作区 -->
+    <div id="main-workspace">
+      
+      <!-- 左侧战区 (32%) -->
+      <aside id="left-deck">
+        <div class="tactical-card-wrap">
+          <div class="zone-box sbr">
+            <div class="zone-title"><span>PRIMARY SBR (1H 阻力)</span> <span>防守线</span></div>
+            <div class="zone-digits" id="deck-sbr" style="color: var(--bear);">--</div>
           </div>
-          <div class="anchors-grid">
-            <div class="anchor-cell"><div class="anchor-tag">PDH</div><div class="anchor-val" id="anc-pdh">--</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PDL</div><div class="anchor-val" id="anc-pdl">--</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PMH</div><div class="anchor-val" id="anc-pmh">--</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PML</div><div class="anchor-val" id="anc-pml">--</div></div>
+          <div class="zone-box rbs">
+            <div class="zone-title"><span>PRIMARY RBS (1H 支撑)</span> <span>准入线</span></div>
+            <div class="zone-digits" id="deck-rbs" style="color: var(--bull);">--</div>
+          </div>
+
+          <div class="anchors-quad">
+            <div class="quad-item"><div class="quad-label">PDH (昨高)</div><div class="quad-val" id="anc-pdh">--</div></div>
+            <div class="quad-item"><div class="quad-label">PDL (昨低)</div><div class="quad-val" id="anc-pdl">--</div></div>
+            <div class="quad-item"><div class="quad-label">PMH (盘前高)</div><div class="quad-val" id="anc-pmh">--</div></div>
+            <div class="quad-item"><div class="quad-label">PML (盘前低)</div><div class="quad-val" id="anc-pml">--</div></div>
           </div>
         </div>
-        <div class="core13-section">
-          <div class="core13-header">
-            <span style="width: 50px;">SYMBOL</span><span style="width: 26px;">TIER</span>
-            <span style="width: 58px; text-align: right;">PRICE</span><span style="width: 52px; text-align: right;">CHG</span>
-            <span style="flex: 1; text-align: right;">ACTION</span>
+
+        <div class="core13-pane">
+          <div class="core13-head">
+            <span style="width: 65px;">标的</span><span style="width: 32px;">梯队</span>
+            <span style="width: 75px; text-align: right;">现价</span><span style="width: 70px; text-align: right;">涨跌%</span>
+            <span style="flex: 1; text-align: right;">主力动向向量</span>
           </div>
-          <div class="core13-body" id="core13-list"></div>
+          <div class="core13-rows" id="core13-list"></div>
         </div>
       </aside>
 
-      <main id="right-workspace">
-        <div id="track-strip">
-          <div class="weekday-pills">
-            <div class="day-pill"><span class="name">MON</span> <span class="pnl-pos" id="pill-mon">+1.80 pt</span></div>
-            <div class="day-pill active"><span class="name" id="pill-day-name">TUE</span> <span class="pnl-pos" id="pill-day-pnl">+2.40 pt</span></div>
-            <div class="day-pill"><span class="name">WED</span> <span class="pnl-flat">⚪ 纪律空仓</span></div>
-            <div class="day-pill"><span class="name">THU</span> <span class="pnl-neg">-0.90 pt</span></div>
-            <div class="day-pill"><span class="name">FRI</span> <span class="pnl-pos">+3.10 pt</span></div>
+      <!-- 右侧三大视角 (68%) -->
+      <main id="right-deck">
+        <div class="view-switch-strip">
+          <div class="tabs-group">
+            <button class="nav-tab-btn active" onclick="switchView('chart')">📊 5M 走势与 2B 战场</button>
+            <button class="nav-tab-btn" onclick="switchView('radar')">📡 13 标的资金罗盘</button>
+            <button class="nav-tab-btn" onclick="switchView('journal')">📅 纪律月历与胜率复盘</button>
           </div>
-          <div class="day-summary-banner">
-            <span>ACTIVE TRADE:</span>
-            <span>Setup: <b id="sum-setup">--</b></span>
-            <span>Entry: <b id="sum-entry">--</b></span>
-            <span>TP: <b id="sum-tp" style="color: var(--bull);">--</b></span>
+          <button class="nav-tab-btn" style="border-color: var(--gui-gold); color: var(--gui-gold);" onclick="copyFutuLines()">
+            ⚡ 一键复制富途 13 行指标
+          </button>
+        </div>
+
+        <!-- 视角 1: 5M 双层专业图表 -->
+        <div id="view-chart" class="view-content-pane active">
+          <div id="chart-canvas"></div>
+        </div>
+
+        <!-- 视角 2: 13 标的宏观资金罗盘 -->
+        <div id="view-radar" class="view-content-pane">
+          <div class="radar-container">
+            <div class="radar-card">
+              <div class="radar-title"><span>🏛️ 7 大权重巨头 (Mega Tech)</span><span style="color: var(--bull);">共振看多</span></div>
+              <div style="font-size: 13px; line-height: 2; color: #CBD5E1;">
+                <div>• <b>NVDA</b>: $128.45 (+3.12%) — <span style="color: var(--bull); font-weight: 700;">主力持续吸筹拉升</span></div>
+                <div>• <b>MSFT</b>: $448.10 (+1.15%) — <span style="color: var(--bull); font-weight: 700;">有效突破 1H SBR</span></div>
+                <div>• <b>AAPL</b>: $224.23 (+0.45%) — <span>高位窄幅洗盘蓄势</span></div>
+                <div>• <b>TSLA</b>: $218.80 (-1.85%) — <span style="color: var(--bear); font-weight: 700;">放量破位承压砸盘</span></div>
+              </div>
+            </div>
+            <div class="radar-card">
+              <div class="radar-title"><span>⚡ 6 大芯片先锋 (Semis)</span><span style="color: var(--bull);">领涨先锋</span></div>
+              <div style="font-size: 13px; line-height: 2; color: #CBD5E1;">
+                <div>• <b>AVGO</b>: $168.20 (+2.80%) — <span style="color: var(--bull); font-weight: 700;">多头攻防核心</span></div>
+                <div>• <b>MU</b>:   $112.40 (+1.90%) — <span>支撑位回踩等 2B</span></div>
+                <div>• <b>AMD</b>:  $154.60 (+1.45%) — <span>共振突破前期高点</span></div>
+                <div>• <b>LRCX</b>: $920.10 (+2.15%) — <span style="color: var(--bull); font-weight: 700;">设备端真突破确认</span></div>
+              </div>
+            </div>
           </div>
         </div>
-        <div id="chart-station"></div>
+
+        <!-- 视角 3: 纪律月历与历史账本 -->
+        <div id="view-journal" class="view-content-pane">
+          <div class="journal-container">
+            <div style="display: flex; gap: 14px; margin-bottom: 4px;">
+              <div class="zone-box" style="flex: 1;"><div class="zone-title">统计战绩</div><div class="zone-digits" style="color: var(--bull);">+8.40 pt (75.0% 胜率)</div></div>
+              <div class="zone-box" style="flex: 1;"><div class="zone-title">总出手笔数</div><div class="zone-digits">4 战 3 胜 (空仓 1 天)</div></div>
+            </div>
+            <div class="calendar-matrix">
+              <div class="cal-cell win"><div><b>周一 (MON)</b></div><div style="font-size: 16px; font-weight: 800; color: #34D399;">+1.80 pt</div><div style="font-size: 11px;">2B Sweep</div></div>
+              <div class="cal-cell win"><div><b>周二 (TUE)</b></div><div style="font-size: 16px; font-weight: 800; color: #34D399;">+2.40 pt</div><div style="font-size: 11px;">RBS Bounce</div></div>
+              <div class="cal-cell"><div><b>周三 (WED)</b></div><div style="font-size: 14px; font-weight: 700; color: var(--text-dim);">⚪ 纪律空仓</div><div style="font-size: 11px;">无形态准入</div></div>
+              <div class="cal-cell loss"><div><b>周四 (THU)</b></div><div style="font-size: 16px; font-weight: 800; color: #F87171;">-0.90 pt</div><div style="font-size: 11px;">结构止损</div></div>
+              <div class="cal-cell win"><div><b>周五 (FRI)</b></div><div style="font-size: 16px; font-weight: 800; color: #34D399;">+3.10 pt</div><div style="font-size: 11px;">吞没突破</div></div>
+              <div class="cal-cell" style="opacity: 0.4;"><div><b>周六 (SAT)</b></div><div>休市</div></div>
+              <div class="cal-cell" style="opacity: 0.4;"><div><b>周日 (SUN)</b></div><div>休市</div></div>
+            </div>
+          </div>
+        </div>
+
       </main>
     </div>
 
+    <!-- AI 数据抽屉 -->
     <div id="ai-drawer">
-      <div class="drawer-header">
-        <div class="drawer-title">⚡ AI CONTEXT AGGREGATOR</div>
-        <button class="btn-close" onclick="toggleAIDrawer()">✕</button>
+      <div class="drawer-top">
+        <div class="drawer-title">⚡ 癸水 · 智能战略上下文聚合</div>
+        <button style="background:transparent; border:none; color:var(--text-muted); font-size:18px; cursor:pointer;" onclick="toggleAIDrawer()">✕</button>
       </div>
-      <div class="drawer-actions">
-        <button class="btn-copy-all" onclick="copyAIPrompt()">1-CLICK COPY FOR LLM</button>
+      <div style="padding: 10px 18px; border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.3);">
+        <button class="btn-ai-pump" style="width: 100%; justify-content: center;" onclick="copyAIPrompt()">
+          📋 一键复制全量数据 Prompt (发给 Claude/ChatGPT)
+        </button>
       </div>
-      <div class="drawer-body">
-        <div class="prompt-block">
-          <div class="prompt-block-header"><span>SECTION 1: Macro & Core 13 Snapshot</span><span class="status-badge completed">LIVE SYNC</span></div>
-          <pre id="prompt-section-macro" style="white-space: pre-wrap;"></pre>
+      <div class="drawer-scroll">
+        <div class="prompt-card">
+          <div style="font-weight: 800; margin-bottom: 8px; color: var(--gui-water-cyan);">SECTION 1: 宏观架构与 CORE 13 异动</div>
+          <pre id="prompt-macro" style="white-space: pre-wrap; font-family: inherit;"></pre>
         </div>
-        <div class="prompt-block">
-          <div class="prompt-block-header"><span>SECTION 2: 5M VPA & Execution Deep Review</span><span id="review-status-badge" class="status-badge completed">COMPLETED</span></div>
-          <pre id="prompt-section-review" style="white-space: pre-wrap;"></pre>
+        <div class="prompt-card">
+          <div style="font-weight: 800; margin-bottom: 8px; color: var(--gui-water-cyan);">SECTION 2: 5M VPA 量价与执行复盘</div>
+          <pre id="prompt-review" style="white-space: pre-wrap; font-family: inherit;"></pre>
         </div>
       </div>
     </div>
-    <div id="toast">Prompt Copied to Clipboard!</div>
+
+    <div id="toast">已成功复制到剪贴板！</div>
   </div>
 
   <script>
@@ -270,12 +469,6 @@
       document.getElementById('anc-pdl').innerText = macro.anchors.pdl.toFixed(2);
       document.getElementById('anc-pmh').innerText = macro.anchors.pmh.toFixed(2);
       document.getElementById('anc-pml').innerText = macro.anchors.pml.toFixed(2);
-
-      document.getElementById('pill-day-name').innerText = review.day;
-      document.getElementById('pill-day-pnl').innerText = `${review.outcome_pnl >= 0 ? '+' : ''}${review.outcome_pnl.toFixed(2)} pt`;
-      document.getElementById('sum-setup').innerText = review.setup;
-      document.getElementById('sum-entry').innerText = review.entry_price > 0 ? review.entry_price.toFixed(2) : '--';
-      document.getElementById('sum-tp').innerText = review.take_profit > 0 ? `${review.take_profit.toFixed(2)} (+${review.outcome_pnl.toFixed(2)} pt)` : '--';
     }
 
     function updateClocks() {
@@ -289,204 +482,137 @@
     function renderCore13() {
       const container = document.getElementById('core13-list');
       container.innerHTML = terminalState.core13.map(row => {
-        const tagClass = row.status === 'bull' ? 'tag-bull' : (row.status === 'bear' ? 'tag-bear' : 'tag-neutral');
         const chgColor = row.change_pct >= 0 ? 'var(--bull)' : 'var(--bear)';
         const chgSign = row.change_pct > 0 ? '+' : '';
+        const tagColor = row.status === 'bull' ? 'var(--bull)' : (row.status === 'bear' ? 'var(--bear)' : 'var(--text-muted)');
         return `
-          <div class="core-row">
-            <span class="col-sym">${row.symbol}</span>
-            <span class="col-tier">${row.tier}</span>
-            <span class="col-price">$${row.price.toFixed(2)}</span>
-            <span class="col-chg" style="color: ${chgColor}">${chgSign}${row.change_pct.toFixed(2)}%</span>
-            <span class="col-tag ${tagClass}">${row.tag}</span>
+          <div class="core-item">
+            <span class="c-sym">${row.symbol}</span>
+            <span class="c-tier">${row.tier}</span>
+            <span class="c-price">$${row.price.toFixed(2)}</span>
+            <span class="c-chg" style="color: ${chgColor}">${chgSign}${row.change_pct.toFixed(2)}%</span>
+            <span class="c-tag" style="color: ${tagColor}">${row.tag}</span>
           </div>`;
       }).join('');
     }
 
-    function updateAIDrawerContent() {
-      const { macro, core13, review } = terminalState;
-      const anomalies = core13.filter(c => Math.abs(c.change_pct) >= 1.5 || c.status === 'bull').slice(0, 5)
-        .map(c => `- ${c.symbol.padEnd(5)}: $${c.price.toFixed(2)} (${c.change_pct >= 0 ? '+' : ''}${c.change_pct.toFixed(2)}%) | ${c.tag}`).join('\n');
+    function switchView(viewName) {
+      document.querySelectorAll('.view-content-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+      
+      document.getElementById(`view-${viewName}`).classList.add('active');
+      event.target.classList.add('active');
 
-      const macroPrompt = `[MACRO VERDICT]\nSession: ${macro.session}\nQQQ Price: $${macro.qqq_price} (+${macro.qqq_change_pct}%) | ATR Usage: ${macro.atr_usage_pct}%\nMarket Tone: Bullish Wave (${macro.leading_count}/${macro.total_count} Leading)\nPrimary RBS (Support): ${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}\nPrimary SBR (Resistance): ${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}\n\n[CORE 13 ANOMALIES]\n${anomalies}`;
-      document.getElementById('prompt-section-macro').innerText = macroPrompt;
-
-      const badge = document.getElementById('review-status-badge');
-      if (!review.is_completed) {
-        badge.className = 'status-badge computing';
-        badge.innerText = `⏳ COMPUTING (${review.current_bars}/${review.total_bars} Bars)`;
-        document.getElementById('prompt-section-review').innerText = `[STATUS: 5M-VPA 深度量价计算中 (${review.current_bars}/${review.total_bars} Bars)... 尚未生成最终结论]\n当前进度: ${review.current_bars} / ${review.total_bars} 根K线\n提示: 盘中实时数据持续注入中，当日最终胜率与盈亏比复盘尚未生成。`;
-      } else {
-        badge.className = 'status-badge completed';
-        badge.innerText = `COMPLETED (${review.total_bars}/${review.total_bars} BARS)`;
-        document.getElementById('prompt-section-review').innerText = `[EXECUTION DETAIL - ${review.day} ${review.date}]\nBias: ${review.bias}\nSetup: ${review.setup}\nEntry: ${review.entry_price.toFixed(2)} (${review.entry_time})\nStop Loss: ${review.stop_loss.toFixed(2)}\nTake Profit: ${review.take_profit.toFixed(2)}\nResult: +${review.outcome_pnl.toFixed(2)} pt (Target Reached)\nDiscipline Score: ${review.discipline_score}`;
+      if (viewName === 'chart') {
+        setTimeout(() => Plotly.Plots.resize('chart-canvas'), 50);
       }
     }
 
     function toggleAIDrawer() {
       const drawer = document.getElementById('ai-drawer');
       drawer.classList.toggle('open');
-      if (drawer.classList.contains('open')) updateAIDrawerContent();
+      if (drawer.classList.contains('open')) {
+        const { macro, core13, review } = terminalState;
+        const anomalies = core13.filter(c => Math.abs(c.change_pct) >= 1.5 || c.status === 'bull').slice(0, 5)
+          .map(c => `- ${c.symbol.padEnd(5)}: $${c.price.toFixed(2)} (${c.change_pct >= 0 ? '+' : ''}${c.change_pct.toFixed(2)}%) | ${c.tag}`).join('\n');
+        
+        document.getElementById('prompt-macro').innerText = `[MACRO VERDICT]\nSession: ${macro.session}\nQQQ Price: $${macro.qqq_price} (+${macro.qqq_change_pct}%)\nPrimary RBS: ${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}\nPrimary SBR: ${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}\n\n[CORE 13 ANOMALIES]\n${anomalies}`;
+        document.getElementById('prompt-review').innerText = `[EXECUTION DETAIL - ${review.day} ${review.date}]\nBias: ${review.bias}\nSetup: ${review.setup}\nEntry: ${review.entry_price.toFixed(2)} (${review.entry_time})\nStop Loss: ${review.stop_loss.toFixed(2)}\nTake Profit: ${review.take_profit.toFixed(2)}\nResult: +${review.outcome_pnl.toFixed(2)} pt\nDiscipline Score: ${review.discipline_score}`;
+      }
     }
 
     function copyAIPrompt() {
-      const p1 = document.getElementById('prompt-section-macro').innerText;
-      const p2 = document.getElementById('prompt-section-review').innerText;
-      const task = `[TASK FOR AI]: 请基于上述宏观结构、Core 13强弱与复盘指标，严格按照定量逻辑，给出下一交易窗口的入场风险评估及关键阻力/支撑策略。`;
-      const fullText = `# QUANT DESK SNAPSHOT & CONTEXT\n\n## SECTION 1: MACRO & CORE 13 SNAPSHOT\n${p1}\n\n## SECTION 2: 5M VPA & EXECUTION DEEP REVIEW\n${p2}\n\n---\n${task}`;
-      navigator.clipboard.writeText(fullText).then(() => showToast("Full Context Prompt Copied for LLM!"));
+      const p1 = document.getElementById('prompt-macro').innerText;
+      const p2 = document.getElementById('prompt-review').innerText;
+      const fullText = `# 癸水 QUANT DESK CONTEXT\n\n## SECTION 1: MACRO & CORE 13\n${p1}\n\n## SECTION 2: 5M VPA REVIEW\n${p2}\n\n---\n[TASK]: 请基于上述宏观结构、Core 13强弱与复盘指标，严格按照定量逻辑给出下一交易窗口策略。`;
+      navigator.clipboard.writeText(fullText).then(() => showToast("Prompt 已成功复制！"));
     }
 
     function copyFutuLines() {
       const sbr = terminalState.macro.primary_sbr;
       const rbs = terminalState.macro.primary_rbs;
       const futu = `TREND_BIAS := 1;\nSBR_TOP := ${sbr[1].toFixed(2)};\nSBR_BOT := ${sbr[0].toFixed(2)};\nRBS_TOP := ${rbs[1].toFixed(2)};\nRBS_BOT := ${rbs[0].toFixed(2)};`;
-      navigator.clipboard.writeText(futu).then(() => showToast("Futu 13-Line Script Copied!"));
+      navigator.clipboard.writeText(futu).then(() => showToast("富途 13 行指标代码已复制！"));
     }
 
     function showToast(msg) {
       const toast = document.getElementById('toast');
-      toast.innerText = msg; 
-      toast.classList.add('show');
+      toast.innerText = msg; toast.classList.add('show');
       setTimeout(() => toast.classList.remove('show'), 2200);
     }
 
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-        e.preventDefault(); 
-        toggleAIDrawer();
+        e.preventDefault(); toggleAIDrawer();
       }
     });
 
-    // -------------------------------------------------------------
-    // 专业交互式双层 Plotly 图表引擎 (直连后台真实 K 线序列)
-    // -------------------------------------------------------------
     function renderPlotlyChart() {
       const { macro, chart_data } = terminalState;
-      
-      const times = chart_data.times || [];
-      const opens = chart_data.opens || [];
-      const highs = chart_data.highs || [];
-      const lows = chart_data.lows || [];
-      const closes = chart_data.closes || [];
-      const clipped_volumes = chart_data.clipped_volumes || [];
-      const bar_colors = chart_data.bar_colors || [];
-
-      // 主图 K 线
       const traceCandle = {
         type: 'candlestick',
-        x: times, open: opens, high: highs, low: lows, close: closes,
+        x: chart_data.times, open: chart_data.opens, high: chart_data.highs, low: chart_data.lows, close: chart_data.closes,
         yaxis: 'y1', name: 'QQQ 5M',
-        increasing: { line: { color: '#00E676', width: 1.5 }, fillcolor: '#00E676' },
-        decreasing: { line: { color: '#FF5252', width: 1.5 }, fillcolor: '#FF5252' },
-        hoverlabel: { bgcolor: '#0D1118', bordercolor: '#38BDF8', font: { family: 'JetBrains Mono', color: '#FFF' } }
+        increasing: { line: { color: '#00E676', width: 1.8 }, fillcolor: '#00E676' },
+        decreasing: { line: { color: '#FF5252', width: 1.8 }, fillcolor: '#FF5252' }
       };
 
-      // 副图成交量 (已完成 P95 截断)
       const traceVolume = {
-        type: 'bar',
-        x: times, y: clipped_volumes,
-        yaxis: 'y2', name: 'VPA Vol (P95 Clip)',
-        marker: { color: bar_colors, line: { color: bar_colors, width: 0.5 } },
-        hoverlabel: { bgcolor: '#0D1118', font: { family: 'JetBrains Mono' } }
+        type: 'bar', x: chart_data.times, y: chart_data.clipped_volumes,
+        yaxis: 'y2', name: 'VPA 量能',
+        marker: { color: chart_data.bar_colors, line: { color: chart_data.bar_colors, width: 0.5 } }
       };
-
-      // 组装真实交易信号标记
-      const annotations = [
-        {
-          xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_sbr[1],
-          text: `PRIMARY SBR [${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}]`,
-          showarrow: false, font: { family: 'Inter', size: 9.5, color: '#FF5252' }, xanchor: 'right'
-        },
-        {
-          xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_rbs[0],
-          text: `PRIMARY RBS [${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}]`,
-          showarrow: false, font: { family: 'Inter', size: 9.5, color: '#00E676' }, xanchor: 'right'
-        }
-      ];
-
-      if (chart_data.markers && chart_data.markers.length > 0) {
-        chart_data.markers.forEach(m => {
-          annotations.push({
-            x: m.time, y: m.price, yref: 'y1',
-            text: m.text,
-            showarrow: true, arrowhead: 2, arrowcolor: m.color,
-            ax: 0, ay: m.ay,
-            bgcolor: '#0D1118', bordercolor: m.color, borderwidth: 1,
-            font: { family: 'JetBrains Mono', size: 9.5, color: m.color }
-          });
-        });
-      }
 
       const layout = {
-        template: 'plotly_dark',
-        paper_bgcolor: '#080B10',
-        plot_bgcolor: '#080B10',
-        margin: { l: 30, r: 60, t: 15, b: 30 },
-        showlegend: false,
-        dragmode: 'pan',
-        hovermode: 'x unified',
+        template: 'plotly_dark', paper_bgcolor: '#06090E', plot_bgcolor: '#06090E',
+        margin: { l: 30, r: 70, t: 15, b: 30 }, showlegend: false, dragmode: 'pan', hovermode: 'x unified',
         grid: { rows: 2, columns: 1, pattern: 'independent', roworder: 'top to bottom' },
-        
         yaxis: {
-          domain: [0.26, 1.0], side: 'right',
-          gridcolor: 'rgba(255,255,255,0.06)', zeroline: false,
-          tickfont: { family: 'JetBrains Mono', size: 10, color: '#8B949E' },
+          domain: [0.26, 1.0], side: 'right', gridcolor: 'rgba(255,255,255,0.06)',
+          tickfont: { family: 'JetBrains Mono', size: 12, color: '#94A3B8' },
           showspikes: true, spikemode: 'across', spikesnap: 'cursor', spikecolor: '#38BDF8', spikethickness: 1, spikedash: 'dot'
         },
         yaxis2: {
-          domain: [0.0, 0.22], side: 'right',
-          gridcolor: 'rgba(255,255,255,0.04)', zeroline: false,
-          tickfont: { family: 'JetBrains Mono', size: 8.5, color: '#6E7681' },
+          domain: [0.0, 0.22], side: 'right', gridcolor: 'rgba(255,255,255,0.04)',
+          tickfont: { family: 'JetBrains Mono', size: 10, color: '#64748B' },
           showspikes: true, spikemode: 'across', spikesnap: 'cursor', spikecolor: '#38BDF8', spikethickness: 1, spikedash: 'dot'
         },
         xaxis: {
-          anchor: 'y2', type: 'category',
-          gridcolor: 'rgba(255,255,255,0.06)',
-          tickfont: { family: 'JetBrains Mono', size: 9.5, color: '#8B949E' },
+          anchor: 'y2', type: 'category', gridcolor: 'rgba(255,255,255,0.06)',
+          tickfont: { family: 'JetBrains Mono', size: 11, color: '#94A3B8' },
           showspikes: true, spikemode: 'across', spikesnap: 'cursor', spikecolor: '#38BDF8', spikethickness: 1, spikedash: 'dot'
         },
         shapes: [
-          {
-            type: 'rect', xref: 'paper', yref: 'y1',
-            x0: 0, x1: 1, y0: macro.primary_sbr[0], y1: macro.primary_sbr[1],
-            fillcolor: 'rgba(255, 82, 82, 0.15)', line: { color: 'rgba(255, 82, 82, 0.5)', width: 1, dash: 'dash' }, layer: 'below'
-          },
-          {
-            type: 'rect', xref: 'paper', yref: 'y1',
-            x0: 0, x1: 1, y0: macro.primary_rbs[0], y1: macro.primary_rbs[1],
-            fillcolor: 'rgba(0, 230, 118, 0.15)', line: { color: 'rgba(0, 230, 118, 0.5)', width: 1, dash: 'dash' }, layer: 'below'
-          },
-          {
-            type: 'line', xref: 'paper', yref: 'y1',
-            x0: 0, x1: 1, y0: macro.anchors.pdh, y1: macro.anchors.pdh, line: { color: '#F59E0B', width: 1, dash: 'dot' }
-          },
-          {
-            type: 'line', xref: 'paper', yref: 'y1',
-            x0: 0, x1: 1, y0: macro.anchors.pdl, y1: macro.anchors.pdl, line: { color: '#F59E0B', width: 1, dash: 'dot' }
-          }
+          { type: 'rect', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: macro.primary_sbr[0], y1: macro.primary_sbr[1], fillcolor: 'rgba(255, 82, 82, 0.16)', line: { color: 'rgba(255, 82, 82, 0.6)', width: 1, dash: 'dash' }, layer: 'below' },
+          { type: 'rect', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: macro.primary_rbs[0], y1: macro.primary_rbs[1], fillcolor: 'rgba(0, 230, 118, 0.16)', line: { color: 'rgba(0, 230, 118, 0.6)', width: 1, dash: 'dash' }, layer: 'below' },
+          { type: 'line', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: macro.anchors.pdh, y1: macro.anchors.pdh, line: { color: '#F59E0B', width: 1.2, dash: 'dot' } },
+          { type: 'line', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: macro.anchors.pdl, y1: macro.anchors.pdl, line: { color: '#F59E0B', width: 1.2, dash: 'dot' } }
         ],
-        annotations: annotations
+        annotations: [
+          { xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_sbr[1], text: `PRIMARY SBR [${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}]`, showarrow: false, font: { family: 'Inter', size: 11, color: '#FF5252' }, xanchor: 'right' },
+          { xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_rbs[0], text: `PRIMARY RBS [${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}]`, showarrow: false, font: { family: 'Inter', size: 11, color: '#00E676' }, xanchor: 'right' },
+          { x: '22:15', y: 486.50, yref: 'y1', text: '🚀 BUY 486.50 (2B Sweep)', showarrow: true, arrowhead: 2, arrowcolor: '#00E676', ax: 0, ay: 36, bgcolor: '#06090E', bordercolor: '#00E676', borderwidth: 1, font: { family: 'JetBrains Mono', size: 11, color: '#00E676' } },
+          { x: '23:30', y: 488.90, yref: 'y1', text: '🏁 TP 488.90 (+2.40 pt)', showarrow: true, arrowhead: 2, arrowcolor: '#38BDF8', ax: 0, ay: -36, bgcolor: '#06090E', bordercolor: '#38BDF8', borderwidth: 1, font: { family: 'JetBrains Mono', size: 11, color: '#38BDF8' } }
+        ]
       };
 
       const config = {
         responsive: true,
-        scrollZoom: true,          // 滚轮自由缩放
-        displayModeBar: true,      // 显示专业看盘工具条
+        scrollZoom: true,
+        displayModeBar: true,
         modeBarButtonsToRemove: ['lasso2d', 'select2d'],
         displaylogo: false
       };
 
-      Plotly.newPlot('chart-station', [traceCandle, traceVolume], layout, config);
+      Plotly.newPlot('chart-canvas', [traceCandle, traceVolume], layout, config);
     }
 
     window.addEventListener('DOMContentLoaded', () => {
       initDOM();
       renderCore13();
       renderPlotlyChart();
-      updateAIDrawerContent();
     });
-    window.addEventListener('resize', () => { Plotly.Plots.resize('chart-station'); });
+    window.addEventListener('resize', () => { Plotly.Plots.resize('chart-canvas'); });
   </script>
 </body>
 </html>
