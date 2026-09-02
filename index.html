@@ -100,7 +100,7 @@
     .tag-bear { color: var(--bear); }
     .tag-neutral { color: var(--text-muted); }
 
-    #right-workspace { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-canvas); }
+    #right-workspace { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-canvas); position: relative; }
     #track-strip { height: 34px; min-height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; background: #090D14; border-bottom: 1px solid var(--border-subtle); gap: 12px; }
     .weekday-pills { display: flex; align-items: center; gap: 6px; }
     .day-pill { display: flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); font-size: 10.5px; font-family: var(--font-mono); cursor: pointer; }
@@ -112,7 +112,18 @@
     .day-summary-banner { display: flex; align-items: center; gap: 12px; font-size: 10.5px; color: var(--text-muted); }
     .day-summary-banner b { color: var(--text-main); font-family: var(--font-mono); }
 
+    /* 专业图表画布与浮动工具条美化 */
     #chart-station { flex: 1; width: 100%; height: calc(100% - 34px); position: relative; }
+    .js-plotly-plot .plotly .modebar {
+      top: 10px !important;
+      right: 16px !important;
+      background: rgba(13, 17, 24, 0.8) !important;
+      border: 1px solid rgba(255,255,255,0.1) !important;
+      border-radius: 4px !important;
+      padding: 2px 4px !important;
+    }
+    .js-plotly-plot .plotly .modebar-btn svg { fill: #8B949E !important; }
+    .js-plotly-plot .plotly .modebar-btn:hover svg { fill: #38BDF8 !important; }
 
     #ai-drawer {
       position: fixed; top: 0; right: -480px; width: 460px; height: 100vh;
@@ -356,17 +367,23 @@
       }
     });
 
+    // -------------------------------------------------------------
+    // 专业 TradingView 级交互式双层 Plotly 图表引擎
+    // -------------------------------------------------------------
     function renderPlotlyChart() {
       const { macro } = terminalState;
       const times = [], opens = [], highs = [], lows = [], closes = [], raw_volumes = [];
       let basePrice = 485.50;
+
       for (let i = 0; i < 32; i++) {
         const totalMinutes = 21 * 60 + 30 + i * 5;
         times.push(`${String(Math.floor(totalMinutes / 60) % 24).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`);
         let o, h_bar, l_bar, c, vol;
-        if (i === 0) { o = 487.20; h_bar = 488.50; l_bar = 486.80; c = 487.80; vol = 1450000; }
-        else if (i === 9) { o = 486.60; l_bar = 486.10; h_bar = 487.10; c = 486.90; vol = 380000; }
-        else if (i > 9 && i <= 24) {
+        if (i === 0) {
+          o = 487.20; h_bar = 488.50; l_bar = 486.80; c = 487.80; vol = 1450000;
+        } else if (i === 9) {
+          o = 486.60; l_bar = 486.10; h_bar = 487.10; c = 486.90; vol = 380000;
+        } else if (i > 9 && i <= 24) {
           basePrice += 0.15 + (Math.random() * 0.1);
           o = basePrice - 0.1; c = basePrice + 0.1; h_bar = c + 0.15; l_bar = o - 0.15; vol = 120000 + Math.random() * 90000;
         } else {
@@ -376,41 +393,141 @@
         opens.push(o); highs.push(h_bar); lows.push(l_bar); closes.push(c); raw_volumes.push(vol);
       }
 
+      // 95 分位数成交量截断
       const sortedVols = [...raw_volumes].sort((a, b) => a - b);
       const vol_p95 = sortedVols[Math.floor(sortedVols.length * 0.95)];
       const clipped_volumes = raw_volumes.map(v => Math.min(v, vol_p95));
       const bar_colors = closes.map((c, idx) => c >= opens[idx] ? '#00E676' : '#FF5252');
 
       const traceCandle = {
-        type: 'candlestick', x: times, open: opens, high: highs, low: lows, close: closes, yaxis: 'y1', name: 'QQQ 5M',
-        increasing: { line: { color: '#00E676', width: 1.2 }, fillcolor: '#00E676' },
-        decreasing: { line: { color: '#FF5252', width: 1.2 }, fillcolor: '#FF5252' }
+        type: 'candlestick',
+        x: times, open: opens, high: highs, low: lows, close: closes,
+        yaxis: 'y1', name: 'QQQ 5M',
+        increasing: { line: { color: '#00E676', width: 1.5 }, fillcolor: '#00E676' },
+        decreasing: { line: { color: '#FF5252', width: 1.5 }, fillcolor: '#FF5252' },
+        hoverlabel: { bgcolor: '#0D1118', bordercolor: '#38BDF8', font: { family: 'JetBrains Mono', color: '#FFF' } }
       };
+
       const traceVolume = {
-        type: 'bar', x: times, y: clipped_volumes, yaxis: 'y2', name: 'VPA Vol (P95 Clip)',
-        marker: { color: bar_colors, line: { color: bar_colors, width: 0.5 } }
+        type: 'bar',
+        x: times, y: clipped_volumes,
+        yaxis: 'y2', name: 'VPA Vol',
+        marker: { color: bar_colors, line: { color: bar_colors, width: 0.5 } },
+        hoverlabel: { bgcolor: '#0D1118', font: { family: 'JetBrains Mono' } }
       };
 
       const layout = {
-        template: 'plotly_dark', paper_bgcolor: '#080B10', plot_bgcolor: '#080B10',
-        margin: { l: 45, r: 45, t: 15, b: 25 }, showlegend: false, hovermode: 'x unified',
+        template: 'plotly_dark',
+        paper_bgcolor: '#080B10',
+        plot_bgcolor: '#080B10',
+        margin: { l: 30, r: 60, t: 15, b: 30 },
+        showlegend: false,
+        dragmode: 'pan', // 默认按住左键拖拽平移
+        hovermode: 'x unified', // 统一十字对齐
         grid: { rows: 2, columns: 1, pattern: 'independent', roworder: 'top to bottom' },
-        yaxis: { domain: [0.26, 1.0], side: 'right', gridcolor: 'rgba(255,255,255,0.05)', zeroline: false, tickfont: { family: 'JetBrains Mono', size: 10, color: '#8B949E' } },
-        yaxis2: { domain: [0.0, 0.22], side: 'right', gridcolor: 'rgba(255,255,255,0.04)', zeroline: false, tickfont: { family: 'JetBrains Mono', size: 8.5, color: '#6E7681' } },
-        xaxis: { anchor: 'y2', type: 'category', gridcolor: 'rgba(255,255,255,0.05)', tickfont: { family: 'JetBrains Mono', size: 9.5, color: '#8B949E' } },
+        
+        // 顶部 K 线轴 (75% 空间)
+        yaxis: {
+          domain: [0.26, 1.0],
+          side: 'right',
+          gridcolor: 'rgba(255,255,255,0.06)',
+          zeroline: false,
+          tickfont: { family: 'JetBrains Mono', size: 10, color: '#8B949E' },
+          showspikes: true,
+          spikemode: 'across',
+          spikesnap: 'cursor',
+          spikecolor: '#38BDF8',
+          spikethickness: 1,
+          spikedash: 'dot'
+        },
+        // 底部成交量轴 (22% 空间)
+        yaxis2: {
+          domain: [0.0, 0.22],
+          side: 'right',
+          gridcolor: 'rgba(255,255,255,0.04)',
+          zeroline: false,
+          tickfont: { family: 'JetBrains Mono', size: 8.5, color: '#6E7681' },
+          showspikes: true,
+          spikemode: 'across',
+          spikesnap: 'cursor',
+          spikecolor: '#38BDF8',
+          spikethickness: 1,
+          spikedash: 'dot'
+        },
+        xaxis: {
+          anchor: 'y2',
+          type: 'category',
+          gridcolor: 'rgba(255,255,255,0.06)',
+          tickfont: { family: 'JetBrains Mono', size: 9.5, color: '#8B949E' },
+          showspikes: true,
+          spikemode: 'across',
+          spikesnap: 'cursor',
+          spikecolor: '#38BDF8',
+          spikethickness: 1,
+          spikedash: 'dot'
+        },
         shapes: [
-          { type: 'rect', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: macro.primary_sbr[0], y1: macro.primary_sbr[1], fillcolor: 'rgba(255, 82, 82, 0.12)', line: { color: 'rgba(255, 82, 82, 0.4)', width: 1, dash: 'dash' }, layer: 'below' },
-          { type: 'rect', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: macro.primary_rbs[0], y1: macro.primary_rbs[1], fillcolor: 'rgba(0, 230, 118, 0.12)', line: { color: 'rgba(0, 230, 118, 0.4)', width: 1, dash: 'dash' }, layer: 'below' },
-          { type: 'line', xref: 'paper', yref: 'y1', x0: 0, x1: 1, y0: macro.anchors.pdh, y1: macro.anchors.pdh, line: { color: '#F59E0B', width: 1, dash: 'dot' } }
+          // SBR 阻力战区
+          {
+            type: 'rect', xref: 'paper', yref: 'y1',
+            x0: 0, x1: 1, y0: macro.primary_sbr[0], y1: macro.primary_sbr[1],
+            fillcolor: 'rgba(255, 82, 82, 0.15)',
+            line: { color: 'rgba(255, 82, 82, 0.5)', width: 1, dash: 'dash' },
+            layer: 'below'
+          },
+          // RBS 支撑战区
+          {
+            type: 'rect', xref: 'paper', yref: 'y1',
+            x0: 0, x1: 1, y0: macro.primary_rbs[0], y1: macro.primary_rbs[1],
+            fillcolor: 'rgba(0, 230, 118, 0.15)',
+            line: { color: 'rgba(0, 230, 118, 0.5)', width: 1, dash: 'dash' },
+            layer: 'below'
+          },
+          // PDH 极值线
+          {
+            type: 'line', xref: 'paper', yref: 'y1',
+            x0: 0, x1: 1, y0: macro.anchors.pdh, y1: macro.anchors.pdh,
+            line: { color: '#F59E0B', width: 1, dash: 'dot' }
+          }
         ],
         annotations: [
-          { xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_sbr[1], text: `PRIMARY SBR [${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}]`, showarrow: false, font: { family: 'Inter', size: 9.5, color: '#FF5252' }, xanchor: 'right' },
-          { xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_rbs[0], text: `PRIMARY RBS [${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}]`, showarrow: false, font: { family: 'Inter', size: 9.5, color: '#00E676' }, xanchor: 'right' },
-          { x: '22:15', y: 486.50, yref: 'y1', text: '🚀 BUY 486.50 (2B Sweep)', showarrow: true, arrowhead: 2, arrowcolor: '#00E676', ax: 0, ay: 32, bgcolor: '#0D1118', bordercolor: '#00E676', borderwidth: 1, font: { family: 'JetBrains Mono', size: 9.5, color: '#00E676' } },
-          { x: '23:30', y: 488.90, yref: 'y1', text: '🏁 TP 488.90 (+2.40 pt)', showarrow: true, arrowhead: 2, arrowcolor: '#38BDF8', ax: 0, ay: -32, bgcolor: '#0D1118', bordercolor: '#38BDF8', borderwidth: 1, font: { family: 'JetBrains Mono', size: 9.5, color: '#38BDF8' } }
+          {
+            xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_sbr[1],
+            text: `PRIMARY SBR [${macro.primary_sbr[0].toFixed(2)} - ${macro.primary_sbr[1].toFixed(2)}]`,
+            showarrow: false, font: { family: 'Inter', size: 9.5, color: '#FF5252' }, xanchor: 'right'
+          },
+          {
+            xref: 'paper', yref: 'y1', x: 0.98, y: macro.primary_rbs[0],
+            text: `PRIMARY RBS [${macro.primary_rbs[0].toFixed(2)} - ${macro.primary_rbs[1].toFixed(2)}]`,
+            showarrow: false, font: { family: 'Inter', size: 9.5, color: '#00E676' }, xanchor: 'right'
+          },
+          {
+            x: '22:15', y: 486.50, yref: 'y1',
+            text: '🚀 BUY 486.50 (2B Sweep)',
+            showarrow: true, arrowhead: 2, arrowcolor: '#00E676', ax: 0, ay: 32,
+            bgcolor: '#0D1118', bordercolor: '#00E676', borderwidth: 1,
+            font: { family: 'JetBrains Mono', size: 9.5, color: '#00E676' }
+          },
+          {
+            x: '23:30', y: 488.90, yref: 'y1',
+            text: '🏁 TP 488.90 (+2.40 pt)',
+            showarrow: true, arrowhead: 2, arrowcolor: '#38BDF8', ax: 0, ay: -32,
+            bgcolor: '#0D1118', bordercolor: '#38BDF8', borderwidth: 1,
+            font: { family: 'JetBrains Mono', size: 9.5, color: '#38BDF8' }
+          }
         ]
       };
-      Plotly.newPlot('chart-station', [traceCandle, traceVolume], layout, { responsive: true, displayModeBar: false });
+
+      // 开启专业级滚轮缩放与右上方模式栏
+      const config = {
+        responsive: true,
+        scrollZoom: true,          // 启用鼠标滚轮自由 Zoom In / Out
+        displayModeBar: true,      // 显示专业看盘工具条
+        modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+        displaylogo: false
+      };
+
+      Plotly.newPlot('chart-station', [traceCandle, traceVolume], layout, config);
     }
 
     window.addEventListener('DOMContentLoaded', () => {
