@@ -1,5 +1,5 @@
 # 文件名: app.py
-# 作用: 癸水 · QQQ 战区座舱（50px 极简微缩 Emoji 导航轨 + 95% 超大宽屏主视口）
+# 作用: 癸水 · QQQ 战区座舱（50px 极简微缩 Emoji 导航轨 + 95% 宽屏主视口 + 5M 执行级大白话复盘）
 
 import calendar
 import datetime
@@ -24,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. 注入针对 41 岁护眼的大字号、高对比暗黑 CSS 与 Mini Rail 样式
+# 2. 注入暗黑高对比度护眼 CSS
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@500;700;800&family=Noto+Serif+SC:wght@700;900&display=swap');
@@ -39,7 +39,7 @@ st.markdown("""
         max-width: 100vw !important;
     }
 
-    /* 顶部紧凑发光 HUD */
+    /* 顶部紧凑 HUD */
     .compact-hud {
         display: flex;
         align-items: center;
@@ -146,14 +146,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 5. 左侧微缩 Mini Rail (0.6) + 右侧 95% 全屏主视口 (9.4)
+# 5. 左侧微缩 Mini Rail (0.65) + 右侧 95% 全屏主视口 (9.35)
 col_rail, col_main = st.columns([0.65, 9.35], gap="small")
 
 if "active_main_tab" not in st.session_state:
     st.session_state["active_main_tab"] = "tab1"
 
 with col_rail:
-    # 4 大核心 Tab 极简微缩图标 (带悬浮提示与高亮状态)
     if st.button("📡", help="1. 宏观雷达与 13 标的 Watchlist", use_container_width=True, type="primary" if st.session_state["active_main_tab"] == "tab1" else "secondary"):
         st.session_state["active_main_tab"] = "tab1"
         st.rerun()
@@ -172,7 +171,6 @@ with col_rail:
 
     st.markdown("<div style='height:12px; border-bottom:1px solid #1E293B; margin-bottom:12px;'></div>", unsafe_allow_html=True)
     
-    # 辅助快捷走位图标
     if st.button("🔄", help="刷新全盘最新行情与战区数据", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
@@ -279,7 +277,6 @@ with col_main:
             m3.metric("📈 1H EMA20 均线", f"${p_to_display['EMA20_1H']:.2f}")
             m4.metric("📊 1H ATR 波动", f"${p_to_display['ATR_1H']:.2f}")
 
-            # 战区 13 行手动覆盖/微调面板
             with st.expander("⚙️ 手动微调 / 覆盖当前 13 行战区参数", expanded=False):
                 st.caption("允许交易员根据盘感或消息面手动修正 SBR/RBS 与多空三灯，点击保存后实时生效。")
                 c_m1, c_m2, c_m3 = st.columns(3)
@@ -337,6 +334,7 @@ with col_main:
     elif st.session_state["active_main_tab"] == "tab4_journal":
         st.subheader("📅 QQQ 2B 同频月历账本与多维复盘 (22:00 - 24:00 MYT)")
         
+        # 模块 A: 昨夜战况极速核验与大白话聊天复盘 Prompt 数据包
         with st.expander(f"⚡ 展开查看【昨夜 ({yesterday_myt_str}) 22:00-24:00 战况极速核验】", expanded=True):
             d1h_y, d5m_y, _ = fetch_raw_data_with_retry(period_5m="5d")
             if d1h_y is not None and d5m_y is not None:
@@ -370,6 +368,70 @@ with col_main:
                     else:
                         yc4.metric("🎯 昨夜战果", "⚪ 严格空仓", "未触发开仓形态")
                         st.info("昨夜价格未触及战区准入条件，或未出现 1.25 倍放量 2B/吞没反转，严格执行空仓纪律。")
+
+                    # 提取 5M 走势细部事实
+                    if day_5m_y is not None and not day_5m_y.empty:
+                        min_p_5m = day_5m_y["Low"].min()
+                        max_p_5m = day_5m_y["High"].max()
+                        heavy_vol_cnt = int(day_5m_y["VOL_HEAVY"].sum()) if "VOL_HEAVY" in day_5m_y.columns else 0
+                        pierce_info = "在战区边缘窄幅拉锯"
+                        if min_p_5m < p_y["PDL"]: pierce_info = "向下刺穿了昨日最低价 PDL"
+                        elif max_p_5m > p_y["PDH"]: pierce_info = "向上冲破了昨日最高价 PDH"
+                    else:
+                        min_p_5m, max_p_5m, heavy_vol_cnt, pierce_info = 0.0, 0.0, 0, "数据同步中"
+
+                    # 提取实操执行状态
+                    if trades_y:
+                        t_obj = trades_y[0]
+                        t_res_str = f"{t_obj['Result']} ({t_obj['PnL_Points']:+.2f} pt)"
+                        t_sig_str = t_obj['Signal']
+                        t_entry_str = f"${t_obj['Entry_Price']:.2f} ({t_obj['Entry_MYT']} MYT)"
+                        t_exit_str = f"${t_obj['Exit_Price']:.2f} ({t_obj['Exit_MYT']} MYT)"
+                        t_tp_sl_str = f"止盈 TP: ${t_obj['TP']:.2f} | 止损 SL: ${t_obj['SL']:.2f}"
+                        t_reason_str = t_obj['Reason']
+                    else:
+                        t_res_str = "⚪ 严格纪律空仓 (0.00 pt)"
+                        t_sig_str = "NO_TRADE (未出信号)"
+                        t_entry_str = "未开仓"
+                        t_exit_str = "未开仓"
+                        t_tp_sl_str = "无"
+                        t_reason_str = "价格未进战区缓冲带，或未出现 ≥1.25x 放量 2B/吞没形态，按纪律管住手空仓保本金。"
+
+                    # 构建通俗易懂的大白话复盘 Prompt
+                    ai_chat_prompt_t4 = f"""# 🎯 QQQ 5M 走势与新闻大白话复盘指令包 (发给 ChatGPT/Claude 聊盘面)
+
+## 一、 昨夜战区客观数据事实 ({yesterday_myt_str})
+- **复盘时间窗口**: `22:00 - 24:00 (MYT)` [美东时间 `10:00 - 12:00 (ET)`]
+- **宏观三灯总闸门**: `{p_y['BIAS_DESC']}` (TREND_BIAS = `{p_y['TREND_BIAS']}`)
+- **核心均线与波幅**: 1H EMA20 = `${p_y['EMA20_1H']:.2f}` | 1H ATR 基础波幅 = `${p_y['ATR_1H']:.2f}`
+- **1H 战区阻力与支撑防线**:
+  - 天花板 (SBR 阻力战区): `${p_y['SBR_BOT']:.2f} ~ ${p_y['SBR_TOP']:.2f}` [{p_y['SBR_TIME']}]
+  - 地板 (RBS 支撑战区): `${p_y['RBS_BOT']:.2f} ~ ${p_y['RBS_TOP']:.2f}` [{p_y['RBS_TIME']}]
+  - 昨日最高/最低 (PDH / PDL): `${p_y['PDH']:.2f}` / `${p_y['PDL']:.2f}`
+  - 盘前最高/最低 (PMH / PML): `${p_y['PMH']:.2f}` / `${p_y['PML']:.2f}`
+- **5M K线走势细节**:
+  - 窗口内最低/最高价: `${min_p_5m:.2f}` ~ `${max_p_5m:.2f}`
+  - 异动放量 K 表现: 窗口内共有 `{heavy_vol_cnt}` 根 5M K线成交量达到 1.25 倍均量
+  - 关键点位刺穿情况: `{pierce_info}`
+- **座舱系统执行判定**:
+  - 战果状态: **{t_res_str}** | 执行信号: `{t_sig_str}`
+  - 进出场记录: `{t_entry_str}` -> `{t_exit_str}` ({t_reason_str})
+  - 挂单止损与止盈: `{t_tp_sl_str}`
+
+---
+
+## 二、 给军师 AI 的大白话聊天任务 (请严格遵守以下规则与我对话):
+请你扮演我身边最懂实战的「贴身看盘军师」与「老操盘手朋友」，像平时跟我喝茶聊天一样，用最接地气的大白话跟我聊聊昨晚的走势：
+
+1. **【严禁输出任何表格】**：绝对不要给我发冷冰冰的 Markdown 表格或代码框，完全用自然分段的聊天口吻和我交流。
+2. **【联网查昨夜新闻，打比方讲内幕】**：请联网搜索昨夜美股到底出了什么宏观大事件（如 CPI/非农/美联储表态/国债收益率）以及科技巨头（英伟达、苹果、微软、特斯拉）的异动。用生动形象的比喻（比如神仙打架、主力演戏、挖坑诱敌）告诉我昨晚主力在玩什么套路。
+3. **【核对系统信号对不对】**：帮我客观核查昨晚 5M 走势有没有出现“假突破扫损翻转”或“战区反转”？系统的定调（比如红灯空头、或者没开仓空仓）到底做对了没有？有没有帮我避开来回挨打的泥潭？
+4. **【今晚怎么干的大白话指引】**：不画饼、不给虚假希望，用一两句大白话告诉我今晚 22:00 (MYT) 开盘前看什么天花板和地板点位，大盘踩到什么价位咱才考虑顺势出手，否则怎么继续喝茶防守。
+"""
+                    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                    with st.expander("🤖 展开查看【📋 一键复制 AI 大白话复盘与新闻诊断 Prompt】", expanded=True):
+                        st.caption("👇 点击下方代码框右上角一键复制完整战报，直接粘贴给 ChatGPT / Claude / Gemini 开启聊天：")
+                        st.code(ai_chat_prompt_t4, language="markdown")
             else:
                 st.warning("行情接口连接中，请稍候点击刷新。")
 
