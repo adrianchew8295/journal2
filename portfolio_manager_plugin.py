@@ -1,5 +1,5 @@
 # 文件名: portfolio_manager_plugin.py
-# 作用: 独立 Tab 2 - 实操持仓维护、4大资产指标卡、高亮色彩战术表格、闲置推荐池与 AI 调仓报告
+# 作用: 独立 Tab 2 - 实操持仓维护、4大资产指标卡、高亮色彩战术表格、闲置推荐池与 AI 大白话基本面调仓 Prompt
 
 import os
 import datetime
@@ -276,25 +276,49 @@ def render_portfolio_expansion(*args, **kwargs):
         2. **将收回的现金滚动买入左表 🟢 阶段1 (筑底)** 或出现 **早晨之星** 的优质标的。
         """)
 
-    # 6. 底部 AI 调仓数据包 (使用 .get() 彻底防 KeyError)
+    # 6. 底部 AI 大白话基本面调仓 Prompt 数据包
     st.markdown("---")
-    st.markdown("#### 🤖 AI 资产滚动调仓诊断战报 (点击右上角复制)")
-    md_report = f"""# 💼 交易员实操持仓与资产滚动 AI 诊断战报
-
-### 1. 账户资产全景
-- **总资产 (NAV)**: `${total_account_nav:,.2f}` | **持仓总市值**: `${total_market_val:,.2f}` | **可用现金**: `${cash_capital:,.2f}`
-- **浮动总盈亏**: `${total_unrealized_pnl:+,.2f}` ({total_pnl_pct:+.2f}%)
-
-### 2. 当前持仓明细
-"""
+    st.markdown("#### 🤖 AI 资产滚动调仓大白话诊断 Prompt (发给 ChatGPT/Claude)")
+    
+    # 梳理持仓文本
+    pos_lines = []
     for r in rows_summary:
-        sym_v = r.get("代码", "")
-        sh_v = r.get("持股量", 0)
-        cost_v = r.get("成本 ($)", 0.0)
-        price_v = r.get("现价 ($)", 0.0)
-        pnl_v = r.get("浮动盈亏 ($)", 0.0)
-        rate_v = r.get("盈亏率 (%)", 0.0)
-        act_v = r.get("实操指令", "")
-        md_report += f"- **{sym_v}**: {sh_v} 股 | 成本: `${cost_v:.2f}` | 现价: `${price_v:.2f}` | 盈亏: `{pnl_v:+.2f} ({rate_v:+.2f}%)` | 指令: {act_v}\n"
+        pos_lines.append(f"- **{r.get('代码', '')}**: {r.get('持股量', 0)} 股 | 成本: `${r.get('成本 ($)', 0.0):.2f}` | 现价: `${r.get('现价 ($)', 0.0):.2f}` | 盈亏: `{r.get('浮动盈亏 ($)', 0.0):+.2f} ({r.get('盈亏率 (%)', 0.0):+.2f}%)` | 减仓卖出区: `{r.get('减仓卖出区', '')}` | 诊断: {r.get('实操指令', '')}")
+    pos_text_block = "\n".join(pos_lines)
 
-    st.code(md_report, language="markdown")
+    # 梳理候选池文本
+    rec_lines = []
+    for br in buy_rows[:4]:
+        rec_lines.append(f"- **{br.get('推荐龙头', '')}**: 现价 `${br.get('最新现价 ($)', 0.0):.2f}` | 建议建仓区: `{br.get('建议建仓区间 (Buy Area)', '')}` | 现有机动现金可买 `{br.get('可用现金可买', '')}` | 指令: {br.get('实操战略建议', '')}")
+    rec_text_block = "\n".join(rec_lines)
+
+    ai_portfolio_chat_prompt = f"""# 💼 交易员实操持仓与基本面/财报大白话调仓指令包 (发给 ChatGPT/Claude 聊资产)
+
+## 一、 账户真实钱包底牌与持仓明细
+- **总资产 (NAV)**: `${total_account_nav:,.2f}` | **持仓总市值**: `${total_market_val:,.2f}`
+- **手里剩余可用现金 (Cash Capital)**: `${cash_capital:,.2f}` (机动子弹)
+- **账户浮动总盈亏**: `${total_unrealized_pnl:+,.2f}` ({total_pnl_pct:+.2f}%)
+- **持仓逐笔明细与技术状态**:
+{pos_text_block}
+
+## 二、 13 核心标的轮动机会候选池
+{rec_text_block}
+
+---
+
+## 三、 给投资顾问军师的大白话调仓任务 (请严格遵守以下规则与我对话):
+请你扮演我的专属「资深投资顾问（Financial Advisor）」与「贴身资产管家」，以聊天谈心的方式，用最通俗的大白话帮我把脉钱包和持仓：
+
+1. **【严禁输出任何表格】**：绝对不要给我发任何死板的表格，完全用清晰自然的大白话段落跟我聊。
+2. **【联网穿透财报与基本面新闻 (查业绩+查底气)】**：
+   - 帮我联网搜索我持仓这几只股票（如 NVDA、QQQM、SNDK 等）以及候选池龙头最近一季的真实财报（营收、利润 EPS、毛利率）与重磅新闻。
+   - 重点看管理层对下季度的**业绩指引（Forward Guidance）**是信心满满还是在甩锅？有没有大客户真金白银给订单？
+3. **【用大白话帮我持仓体检 (打比方说人话)】**：
+   - 告诉我手里的股票，哪些是“真有业绩支撑的好马”（可以放心骑着主升浪）？
+   - 哪些是“高位吹泡泡、主力在掩护出货的弱势股”（建议我逢高卖掉换成真金白银）？
+4. **【资金滚动怎么换股的精确算账】**：
+   - 结合我手里剩下的可用现金（${cash_capital:,.2f}）以及卖出弱势股能收回的钱，告诉我接下来该怎么滚动调仓。
+   - 用大白话明确告诉我：建议我把钱换到哪 1~2 只基本面最扎实、估值跌到位的龙头里？建议买多少股？在什么价格区间挂单分批买？防守线设在哪里？
+"""
+    st.caption("👇 点击下方代码框右上角一键复制完整战报，直接粘贴给 ChatGPT / Claude 开启大白话聊天调仓：")
+    st.code(ai_portfolio_chat_prompt, language="markdown")
