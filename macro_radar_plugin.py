@@ -1,5 +1,5 @@
 # 文件名: macro_radar_plugin.py
-# 作用: Tab 1 专精看板 - 13 核心标的宏观 Watchlist (包含买卖精准区间) + TradingView 日线战区图
+# 作用: Tab 1 专精看板 - 13 核心标的彩色战术 Watchlist + TradingView 交互日线穿透图
 
 import datetime
 import os
@@ -233,22 +233,22 @@ def render_stock_zone_chart(sym, df_daily, zones):
 
     fig.add_trace(go.Candlestick(
         x=df.index.strftime('%Y-%m-%d'), open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-        name="日线 K 线", increasing_line_color="#089981", decreasing_line_color="#F23645", line=dict(width=1.2)
+        name="日线 K 线", increasing_line_color="#00E676", decreasing_line_color="#FF5252", line=dict(width=1.2)
     ), row=1, col=1)
 
     fig.add_trace(go.Scatter(x=df.index.strftime('%Y-%m-%d'), y=df["MA20"], line=dict(color="#F59E0B", width=1.6), name="MA20 (动量生命线)"), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index.strftime('%Y-%m-%d'), y=df["MA50"], line=dict(color="#38BDF8", width=1.8), name="MA50 (机构成本线)"), row=1, col=1)
 
     if zones:
-        fig.add_hrect(y0=zones["buy_low"], y1=zones["buy_high"], fillcolor="rgba(16, 185, 129, 0.16)", line_width=1, line_color="#10B981", layer="below", row=1, col=1)
-        fig.add_hrect(y0=zones["sell_low"], y1=zones["sell_high"], fillcolor="rgba(239, 68, 68, 0.16)", line_width=1, line_color="#EF4444", layer="below", row=1, col=1)
+        fig.add_hrect(y0=zones["buy_low"], y1=zones["buy_high"], fillcolor="rgba(0, 230, 118, 0.16)", line_width=1, line_color="#00E676", layer="below", row=1, col=1)
+        fig.add_hrect(y0=zones["sell_low"], y1=zones["sell_high"], fillcolor="rgba(255, 82, 82, 0.16)", line_width=1, line_color="#FF5252", layer="below", row=1, col=1)
 
-    bar_colors = np.where(df["Close"] >= df["Open"], "#089981", "#F23645")
+    bar_colors = np.where(df["Close"] >= df["Open"], "#00E676", "#FF5252")
     fig.add_trace(go.Bar(x=df.index.strftime('%Y-%m-%d'), y=df["Volume"], name="日成交量", marker=dict(color=bar_colors)), row=2, col=1)
 
     fig.update_layout(
         height=520, margin=dict(l=10, r=10, t=35, b=10), template="plotly_dark",
-        paper_bgcolor="#0B0F19", plot_bgcolor="#0B0F19", hovermode="x unified",
+        paper_bgcolor="#06090E", plot_bgcolor="#06090E", hovermode="x unified",
         xaxis_rangeslider_visible=False, dragmode="pan"
     )
     st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "displaylogo": False})
@@ -272,7 +272,52 @@ def render_macro_radar_tab():
 
     st.markdown("---")
     st.markdown("#### 📊 13 核心标的精准点位与形态 Watchlist (从强到弱)")
-    st.dataframe(res["df_result"], use_container_width=True, height=380, hide_index=True)
+
+    # ---------------- 战术高亮着色核心函数 ----------------
+    df_raw = res["df_result"].copy()
+
+    def apply_watchlist_theme(row):
+        styles = [""] * len(row)
+        sym_idx = df_raw.columns.get_loc("标的")
+        price_idx = df_raw.columns.get_loc("现价 ($)")
+        chg_idx = df_raw.columns.get_loc("日涨跌 (%)")
+        sp_idx = df_raw.columns.get_loc("相对QQQ (%)")
+        buy_idx = df_raw.columns.get_loc("买入建仓区间 (Buy)")
+        hold_idx = df_raw.columns.get_loc("持仓波段区间 (Hold)")
+        sell_idx = df_raw.columns.get_loc("减仓卖出区间 (Sell)")
+        act_idx = df_raw.columns.get_loc("实操指令 (Action)")
+
+        chg_v = row["日涨跌 (%)"]
+        sp_v = row["相对QQQ (%)"]
+        act_v = row["实操指令 (Action)"]
+
+        styles[sym_idx] = "color: #FFFFFF; font-weight: 800; font-size: 14px;"
+        styles[price_idx] = "color: #FFFFFF; font-weight: 700; font-family: 'JetBrains Mono';"
+
+        # 涨跌与相对强度
+        if chg_v > 0: styles[chg_idx] = "color: #00E676; font-weight: 800; font-family: 'JetBrains Mono';"
+        elif chg_v < 0: styles[chg_idx] = "color: #FF5252; font-weight: 800; font-family: 'JetBrains Mono';"
+
+        if sp_v >= 0: styles[sp_idx] = "color: #00E676; font-weight: 800; font-family: 'JetBrains Mono';"
+        else: styles[sp_idx] = "color: #FF5252; font-weight: 800; font-family: 'JetBrains Mono';"
+
+        # 买区、持仓区、卖区三色分明
+        styles[buy_idx] = "color: #38BDF8; font-weight: 800; font-family: 'JetBrains Mono';"
+        styles[hold_idx] = "color: #94A3B8; font-family: 'JetBrains Mono';"
+        styles[sell_idx] = "color: #FCD34D; font-weight: 800; font-family: 'JetBrains Mono';"
+
+        # 实操指令胶囊高亮
+        if "买入" in act_v or "加仓" in act_v:
+            styles[act_idx] = "background-color: #064E3B; color: #34D399; font-weight: 800; border-radius: 4px;"
+        elif "止盈" in act_v or "减仓" in act_v:
+            styles[act_idx] = "background-color: #78350F; color: #FCD34D; font-weight: 800; border-radius: 4px;"
+        elif "观望" in act_v or "破位" in act_v:
+            styles[act_idx] = "background-color: #7F1D1D; color: #FCA5A5; font-weight: 800; border-radius: 4px;"
+
+        return styles
+
+    styled_watchlist = df_raw.style.apply(apply_watchlist_theme, axis=1)
+    st.dataframe(styled_watchlist, use_container_width=True, height=420, hide_index=True)
 
     st.markdown("---")
     st.markdown("#### 🎯 单股日线战区穿透分析 (点击切换标的)")
