@@ -273,7 +273,7 @@ def render_macro_radar_tab():
     st.markdown("---")
     st.markdown("#### 📊 13 核心标的精准点位与形态 Watchlist (从强到弱)")
 
-    # ---------------- 战术高亮着色核心函数 ----------------
+    # ---------------- 战术高亮着色核心函数 (完全激活 Styler) ----------------
     df_raw = res["df_result"].copy()
 
     def apply_watchlist_theme(row):
@@ -289,24 +289,23 @@ def render_macro_radar_tab():
 
         chg_v = row["日涨跌 (%)"]
         sp_v = row["相对QQQ (%)"]
-        act_v = row["实操指令 (Action)"]
+        act_v = str(row["实操指令 (Action)"])
 
-        styles[sym_idx] = "color: #FFFFFF; font-weight: 800; font-size: 14px;"
+        styles[sym_idx] = "color: #FFFFFF; font-weight: 800; font-size: 13.5px;"
         styles[price_idx] = "color: #FFFFFF; font-weight: 700; font-family: 'JetBrains Mono';"
 
-        # 涨跌与相对强度
         if chg_v > 0: styles[chg_idx] = "color: #00E676; font-weight: 800; font-family: 'JetBrains Mono';"
         elif chg_v < 0: styles[chg_idx] = "color: #FF5252; font-weight: 800; font-family: 'JetBrains Mono';"
 
         if sp_v >= 0: styles[sp_idx] = "color: #00E676; font-weight: 800; font-family: 'JetBrains Mono';"
         else: styles[sp_idx] = "color: #FF5252; font-weight: 800; font-family: 'JetBrains Mono';"
 
-        # 买区、持仓区、卖区三色分明
+        # 支撑买区(亮蓝) / 阻力卖区(金黄)
         styles[buy_idx] = "color: #38BDF8; font-weight: 800; font-family: 'JetBrains Mono';"
         styles[hold_idx] = "color: #94A3B8; font-family: 'JetBrains Mono';"
         styles[sell_idx] = "color: #FCD34D; font-weight: 800; font-family: 'JetBrains Mono';"
 
-        # 实操指令胶囊高亮
+        # 实操指令高亮胶囊
         if "买入" in act_v or "加仓" in act_v:
             styles[act_idx] = "background-color: #064E3B; color: #34D399; font-weight: 800; border-radius: 4px;"
         elif "止盈" in act_v or "减仓" in act_v:
