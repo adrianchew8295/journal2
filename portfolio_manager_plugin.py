@@ -1,5 +1,5 @@
 # 文件名: portfolio_manager_plugin.py
-# 作用: 独立 Tab 2 专享 - 实操持仓维护、4大资产指标卡、持仓形态诊断、闲置资金推荐池与 AI 调仓报告
+# 作用: 独立 Tab 2 - 实操持仓管理、4大资产指标卡、紧凑推荐表格与 AI 调仓报告
 
 import os
 import datetime
@@ -35,9 +35,6 @@ def save_portfolio_data(df):
     df.to_csv(PORTFOLIO_FILE, index=False, encoding="utf-8-sig")
 
 def render_portfolio_expansion(*args, **kwargs):
-    """
-    通用弹性接收参数，彻底杜绝 TypeError
-    """
     price_dict = {}
     if "price_dict" in kwargs and isinstance(kwargs["price_dict"], dict):
         price_dict = kwargs["price_dict"]
@@ -141,9 +138,9 @@ def render_portfolio_expansion(*args, **kwargs):
     total_cost_basis = total_market_val - total_unrealized_pnl
     total_pnl_pct = (total_unrealized_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0.0
 
-    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-    # 3. 四大核心资产指标卡 (对齐截图 2)
+    # 3. 四大核心资产指标卡
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("💰 账户总资产 (NAV)", f"${total_account_nav:,.2f}", f"整体盈亏: {total_pnl_pct:+.2f}%")
     m2.metric("📊 持仓总市值", f"${total_market_val:,.2f}", f"仓位: {(total_market_val/total_account_nav*100):.1f}%" if total_account_nav > 0 else "0%")
@@ -168,44 +165,64 @@ def render_portfolio_expansion(*args, **kwargs):
 
     st.markdown("---")
 
-    # 5. 闲置现金滚动买入推荐池 (对齐截图 2 绿色卡片)
-    st.markdown("##### 🎯 闲置现金滚动买入推荐池")
+    # 5. 【优化版】闲置现金滚动买入推荐池 (完全采用紧凑 Table 替代卡片)
+    st.markdown("##### 🎯 闲置现金滚动买入推荐池 & 调仓法则")
     
     held_syms = df_pos["Symbol"].tolist() if not df_pos.empty else []
-    buy_candidates = []
+    buy_rows = []
+    
     if isinstance(price_dict, dict) and price_dict:
         for s, v in price_dict.items():
             if isinstance(v, dict) and s not in held_syms:
-                buy_candidates.append({
-                    "sym": s,
-                    "price": v.get("price", 100.0),
-                    "buy_zone": v.get("buy_zone", "$100 - $105"),
-                    "action": v.get("action", "【分批买入】")
-                })
+                p = float(v.get("price", 0.0))
+                if p > 0:
+                    max_s = int(cash_capital // p) if cash_capital > 0 else 0
+                    buy_rows.append({
+                        "推荐标的": s,
+                        "最新现价 ($)": round(p, 2),
+                        "建议建仓区间 (Buy Area)": v.get("buy_zone", "-"),
+                        "可用现金可买股数": f"{max_s} 股",
+                        "实操建议": v.get("action", "【分批买入】")
+                    })
     
-    # 保底展示优质标的
-    if not buy_candidates:
-        buy_candidates = [
-            {"sym": "AMZN", "price": 204.92, "buy_zone": "$197.30 - $208.12", "action": "【分批买入】"},
-            {"sym": "GOOGL", "price": 186.82, "buy_zone": "$182.76 - $192.60", "action": "【分批买入】"},
-            {"sym": "TSLA", "price": 338.85, "buy_zone": "$325.80 - $342.61", "action": "【分批买入】"},
-            {"sym": "MU", "price": 102.66, "buy_zone": "$99.80 - $107.95", "action": "【分批买入】"},
-            {"sym": "AMD", "price": 150.81, "buy_zone": "$142.50 - $157.91", "action": "【分批买入】"}
+    # 保底候选池
+    if not buy_rows:
+        default_candidates = [
+            ("AAPL", 325.13, "$302.05 - $315.89", "【加仓/持有】"),
+            ("MSFT", 501.02, "$426.53 - $491.50", "【坚决观望】"),
+            ("AMZN", 254.92, "$247.36 - $260.12", "【分批买入】"),
+            ("GOOGL", 335.02, "$331.75 - $352.40", "【分批买入】"),
+            ("META", 578.54, "$535.37 - $598.26", "【加仓/持有】"),
+            ("TSLA", 338.85, "$325.80 - $342.61", "【分批买入】"),
+            ("MU", 102.66, "$99.80 - $107.95", "【分批买入】"),
+            ("AMD", 150.81, "$142.50 - $157.91", "【分批买入】")
         ]
+        for s, p, bz, act in default_candidates:
+            if s not in held_syms:
+                max_s = int(cash_capital // p) if cash_capital > 0 else 0
+                buy_rows.append({
+                    "推荐标的": s,
+                    "最新现价 ($)": round(p, 2),
+                    "建议建仓区间 (Buy Area)": bz,
+                    "可用现金可买股数": f"{max_s} 股",
+                    "实操建议": act
+                })
 
-    c_rec_left, c_rec_right = st.columns([3, 2])
-    with c_rec_left:
-        st.markdown("🟢 **推荐逢低建仓池 (阶段1 / 筑底企稳)**")
-        for b in buy_candidates[:5]:
-            p = b["price"]
-            max_s = int(cash_capital // p) if p > 0 else 0
-            st.success(f"**{b['sym']}** | 现价: `${p:.2f}` | 建仓区: `{b['buy_zone']}` | 可买: `{max_s} 股`\n\n*建议*: `{b['action']}`")
+    c_tbl_left, c_tbl_right = st.columns([3.2, 1.8], gap="medium")
+    with c_tbl_left:
+        df_buy_candidates = pd.DataFrame(buy_rows)
+        st.dataframe(
+            df_buy_candidates,
+            use_container_width=True,
+            height=220,
+            hide_index=True
+        )
 
-    with c_rec_right:
-        st.markdown("💡 **资金滚动调仓法则**")
+    with c_tbl_right:
         st.info("""
-        1. **持仓若进入 ⚠️ 阶段3 (滞涨)** 或出现 **黄昏之星 / 看跌吞没** 时，逢高部分减仓换回现金；
-        2. **将收回的现金滚动买入左侧 🟢 阶段1 (筑底)** 或出现 **早晨之星** 的新龙头。
+        **💡 资金滚动调仓法则**
+        1. **持仓若进入 ⚠️ 阶段3 (滞涨)** 或出现 **黄昏之星 / 看跌吞没** 时，逢高部分减仓以收回可用现金；
+        2. **将收回的现金滚动买入左表 🟢 阶段1 (筑底)** 或出现 **早晨之星** 的优质标的。
         """)
 
     # 6. 底部 AI 调仓数据包
