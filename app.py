@@ -1,16 +1,14 @@
 # 文件名：app.py
-# 作用：AlphaCockpit Pro 顶级量化终端（100vh 零滚动 / 42px HUD / 28%战区 / 72%双层图 / AI抽屉）
+# 作用：AlphaCockpit Pro 终端主调度（严谨零报错架构：读取本地 index.html 注入数据）
 import datetime
 import json
 import os
 import pytz
-import numpy as np
-import pandas as pd
 import streamlit as st
 
 from data_fetcher import fetch_raw_data_with_retry
 from futu_engine import compute_futu_13_params, simulate_trades_with_2b
-from journal_manager import load_journal, append_to_journal
+from journal_manager import load_journal
 
 # 1. 页面基础配置 (宽屏、折叠侧边栏)
 st.set_page_config(
@@ -36,9 +34,7 @@ d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
 p = compute_futu_13_params(d1h, d5m, cutoff_ny) if (d1h is not None and d5m is not None) else None
 trades, day_5m = simulate_trades_with_2b(d5m, p, cutoff_ny, window_end_ny) if (p and d5m is not None) else ([], None)
 
-df_journal = load_journal()
-
-# 4. 构建标准化数据模型 (Tab 1 Macro + Tab 3 Review)
+# 4. 构建传输数据模型
 macro_data = {
     "session": "22:00-24:00 Active Window",
     "verdict_title": p.get("BIAS_DESC", "🟢 多头主导 (Bull Wave) — 坚守 RBS 回踩 2B 吸筹做多") if p else "🟡 数据同步中",
@@ -107,14 +103,23 @@ else:
         "discipline_score": "CALCULATING"
     }
 
-# 序列化为前端安全 JSON 字符串
-init_state_json = json.dumps({
+# 序列化状态
+json_data_payload = json.dumps({
     "macro": macro_data,
     "core13": core13_data,
     "review": review_data
 }, ensure_ascii=False)
 
-# 5. Streamlit 样式净化 (锁定 100vh 零全局滚动条)
+# 5. 读取外部 index.html 并完成数据注入
+html_file_path = os.path.join(os.path.dirname(__file__), "index.html")
+if os.path.exists(html_file_path):
+    with open(html_file_path, "r", encoding="utf-8") as f:
+        html_template = f.read()
+    rendered_terminal = html_template.replace("__INJECTED_DATA__", json_data_payload)
+else:
+    rendered_terminal = "<h1>index.html not found. Please create index.html in the repository root.</h1>"
+
+# 6. Streamlit 页面边距与滚动锁定
 st.markdown("""
 <style>
     #MainMenu, header, footer { visibility: hidden !important; height: 0 !important; }
@@ -129,197 +134,5 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 6. 单文件注入纯原生 Webapp
-terminal_html = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>AlphaCockpit Pro</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-  <style>
-    :root {
-      --bg-canvas: #080B10;
-      --surface-card: rgba(18, 24, 38, 0.75);
-      --surface-hover: rgba(255, 255, 255, 0.04);
-      --border-subtle: rgba(255, 255, 255, 0.08);
-      --border-active: rgba(56, 189, 248, 0.4);
-      --bull: #00E676;
-      --bull-bg: rgba(0, 230, 118, 0.12);
-      --bear: #FF5252;
-      --bear-bg: rgba(255, 82, 82, 0.12);
-      --warn: #F59E0B;
-      --warn-bg: rgba(245, 158, 11, 0.12);
-      --accent: #38BDF8;
-      --text-main: #E6EDF3;
-      --text-muted: #8B949E;
-      --text-dim: #6E7681;
-      --font-mono: 'JetBrains Mono', monospace;
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-    html, body {
-      width: 100vw; height: 100vh; max-height: 100vh; overflow: hidden;
-      background-color: var(--bg-canvas); color: var(--text-main);
-      font-family: var(--font-sans); font-size: 12px; line-height: 1.3;
-      -webkit-font-smoothing: antialiased;
-    }
-    ::-webkit-scrollbar { width: 4px; height: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
-
-    #app-container {
-      display: flex; flex-direction: column; width: 100vw; height: 100vh;
-      background: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.03) 0%, transparent 60%), var(--bg-canvas);
-    }
-    #top-hud {
-      height: 42px; min-height: 42px; display: flex; align-items: center;
-      justify-content: space-between; padding: 0 14px; background: var(--surface-card);
-      border-bottom: 1px solid var(--border-subtle); backdrop-filter: blur(16px); z-index: 20;
-    }
-    .hud-left, .hud-center, .hud-right { display: flex; align-items: center; gap: 12px; }
-    .brand-tag { font-weight: 800; font-size: 12px; letter-spacing: 0.08em; color: #fff; display: flex; align-items: center; gap: 6px; }
-    .brand-tag span { background: linear-gradient(135deg, var(--accent), #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    .clock-group { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.3); padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border-subtle); }
-    .clock-item { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-    .clock-item b { color: var(--text-main); }
-    .session-pill { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 12px; background: var(--bull-bg); border: 1px solid rgba(0, 230, 118, 0.3); color: var(--bull); font-size: 10px; font-weight: 700; }
-    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bull); box-shadow: 0 0 8px var(--bull); animation: pulse-dot 1.8s infinite; }
-    .verdict-banner { padding: 4px 12px; border-radius: 4px; background: rgba(0, 230, 118, 0.08); border: 1px solid rgba(0, 230, 118, 0.25); font-weight: 600; font-size: 11px; color: var(--bull); white-space: nowrap; }
-    .hud-metrics { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 11px; }
-    .hud-metric-val { font-weight: 700; color: #fff; }
-    .btn-ai-pump {
-      display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 4px;
-      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2));
-      border: 1px solid var(--accent); color: #fff; font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s;
-    }
-    .btn-ai-pump:hover { background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(129, 140, 248, 0.35)); box-shadow: 0 0 12px rgba(56, 189, 248, 0.3); }
-    .kbd-shortcut { background: rgba(0,0,0,0.4); padding: 1px 4px; border-radius: 3px; font-size: 9px; color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.4); }
-
-    #main-deck { display: flex; flex: 1; height: calc(100vh - 42px); width: 100vw; overflow: hidden; }
-    #mini-rail { width: 46px; min-width: 46px; background: #090D14; border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; align-items: center; padding: 10px 0; gap: 16px; z-index: 10; }
-    .rail-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
-    .rail-btn:hover, .rail-btn.active { color: var(--accent); background: rgba(56, 189, 248, 0.1); }
-
-    #left-tactical { width: 28%; min-width: 310px; max-width: 380px; background: var(--surface-card); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; backdrop-filter: blur(16px); }
-    .tactical-zones { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border-subtle); background: rgba(13, 17, 24, 0.6); }
-    .zone-row { display: flex; gap: 8px; }
-    .zone-card { flex: 1; padding: 6px 10px; border-radius: 4px; background: rgba(18, 24, 38, 0.9); border: 1px solid var(--border-subtle); }
-    .zone-card.sbr { border-left: 3px solid var(--bear); }
-    .zone-card.rbs { border-left: 3px solid var(--bull); }
-    .zone-label { font-size: 9px; font-weight: 700; color: var(--text-muted); display: flex; justify-content: space-between; }
-    .zone-range { font-family: var(--font-mono); font-size: 13px; font-weight: 700; margin-top: 2px; color: var(--text-main); }
-    .anchors-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-    .anchor-cell { background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-subtle); padding: 3px 4px; border-radius: 3px; text-align: center; }
-    .anchor-tag { font-size: 8.5px; color: var(--text-dim); font-weight: 700; }
-    .anchor-val { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; color: #cbd5e1; }
-
-    .core13-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .core13-header { height: 24px; display: flex; align-items: center; padding: 0 10px; font-size: 9.5px; font-weight: 700; color: var(--text-dim); border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.25); }
-    .core13-body { flex: 1; overflow-y: auto; }
-    .core-row { height: 27px; min-height: 27px; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,0.03); font-family: var(--font-mono); font-size: 11px; }
-    .core-row:hover { background: var(--surface-hover); }
-    .col-sym { width: 50px; font-weight: 700; color: #fff; font-family: var(--font-sans); }
-    .col-tier { width: 26px; font-size: 9px; color: var(--text-dim); }
-    .col-price { width: 58px; text-align: right; color: var(--text-main); font-weight: 500; }
-    .col-chg { width: 52px; text-align: right; font-weight: 600; }
-    .col-tag { flex: 1; text-align: right; font-size: 10px; font-family: var(--font-sans); font-weight: 600; }
-    .tag-bull { color: var(--bull); }
-    .tag-bear { color: var(--bear); }
-    .tag-neutral { color: var(--text-muted); }
-
-    #right-workspace { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-canvas); }
-    #track-strip { height: 34px; min-height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; background: #090D14; border-bottom: 1px solid var(--border-subtle); gap: 12px; }
-    .weekday-pills { display: flex; align-items: center; gap: 6px; }
-    .day-pill { display: flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); font-size: 10.5px; font-family: var(--font-mono); cursor: pointer; }
-    .day-pill.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.1); }
-    .day-pill .name { font-weight: 700; color: var(--text-muted); font-family: var(--font-sans); }
-    .day-pill .pnl-pos { color: var(--bull); font-weight: 700; }
-    .day-pill .pnl-neg { color: var(--bear); font-weight: 700; }
-    .day-pill .pnl-flat { color: var(--text-dim); }
-    .day-summary-banner { display: flex; align-items: center; gap: 12px; font-size: 10.5px; color: var(--text-muted); }
-    .day-summary-banner b { color: var(--text-main); font-family: var(--font-mono); }
-
-    #chart-station { flex: 1; width: 100%; height: calc(100% - 34px); position: relative; }
-
-    #ai-drawer {
-      position: fixed; top: 0; right: -480px; width: 460px; height: 100vh;
-      background: rgba(13, 17, 24, 0.95); border-left: 1px solid rgba(255, 255, 255, 0.12);
-      backdrop-filter: blur(24px); box-shadow: -10px 0 30px rgba(0, 0, 0, 0.6);
-      display: flex; flex-direction: column; z-index: 100; transition: right 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    #ai-drawer.open { right: 0; }
-    .drawer-header { height: 48px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); }
-    .drawer-title { font-weight: 700; font-size: 13px; color: #fff; display: flex; align-items: center; gap: 8px; }
-    .btn-close { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 4px; }
-    .drawer-actions { padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); background: rgba(0,0,0,0.25); display: flex; gap: 8px; }
-    .btn-copy-all { flex: 1; padding: 7px 12px; background: linear-gradient(135deg, #0284c7, #4f46e5); border: none; border-radius: 4px; color: #fff; font-weight: 600; font-size: 11px; cursor: pointer; }
-    .btn-toggle-state { padding: 7px 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-muted); font-size: 10.5px; cursor: pointer; }
-    .drawer-body { flex: 1; padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
-    .prompt-block { background: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 10px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; color: #cbd5e1; }
-    .prompt-block-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 700; font-size: 10.5px; color: var(--text-muted); }
-
-    .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 10px; font-size: 9.5px; font-weight: 700; }
-    .status-badge.computing { background: var(--warn-bg); color: var(--warn); border: 1px solid rgba(245, 158, 11, 0.35); animation: pulse-warn 1.5s infinite; }
-    .status-badge.completed { background: var(--bull-bg); color: var(--bull); border: 1px solid rgba(0, 230, 118, 0.35); }
-
-    @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
-    @keyframes pulse-warn { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-
-    #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(50px); background: #0284c7; color: #fff; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600; opacity: 0; transition: all 0.25s ease; z-index: 1000; }
-    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-  </style>
-</head>
-<body>
-  <div id="app-container">
-    <header id="top-hud">
-      <div class="hud-left">
-        <div class="brand-tag">ALPHA<span>COCKPIT</span> <span style="font-size: 9px; color: var(--text-dim); font-weight: 500;">PRO</span></div>
-        <div class="clock-group">
-          <div class="clock-item">MYT <b id="clock-myt">--:--:--</b></div>
-          <span style="color: var(--border-subtle);">|</span>
-          <div class="clock-item">ET <b id="clock-et">--:--:--</b></div>
-        </div>
-        <div class="session-pill"><div class="status-dot"></div>22:00-24:00 MYT WINDOW ACTIVE</div>
-      </div>
-      <div class="hud-center">
-        <div class="verdict-banner" id="hud-verdict">--</div>
-      </div>
-      <div class="hud-right">
-        <div class="hud-metrics">
-          <div>QQQ: <span class="hud-metric-val" id="hud-qqq">--</span></div>
-          <div>ATR%: <span class="hud-metric-val" id="hud-atr" style="color: var(--accent);">--</span></div>
-        </div>
-        <button class="btn-ai-pump" onclick="toggleAIDrawer()">AI DATA PUMP <span class="kbd-shortcut">SPACE</span></button>
-      </div>
-    </header>
-
-    <div id="main-deck">
-      <nav id="mini-rail">
-        <div class="rail-btn active" title="Cockpit Deck">⊞</div>
-        <div class="rail-btn" title="Sync Futu 13 Lines" onclick="copyFutuLines()">⚡</div>
-        <div class="rail-btn" style="margin-top: auto;" title="Connected">●</div>
-      </nav>
-
-      <aside id="left-tactical">
-        <div class="tactical-zones">
-          <div class="zone-row">
-            <div class="zone-card sbr">
-              <div class="zone-label"><span>PRIMARY SBR</span> <span>1H 阻力</span></div>
-              <div class="zone-range" id="deck-sbr">--</div>
-            </div>
-            <div class="zone-card rbs">
-              <div class="zone-label"><span>PRIMARY RBS</span> <span>1H 支撑</span></div>
-              <div class="zone-range" id="deck-rbs">--</div>
-            </div>
-          </div>
-          <div class="anchors-grid">
-            <div class="anchor-cell"><div class="anchor-tag">PDH</div><div class="anchor-val" id="anc-pdh">--</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PDL</div><div class="anchor-val" id="anc-pdl">--</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PMH</div><div class="anchor-val" id="anc-pmh">--</div></div>
-            <div class="anchor-cell"><div class="anchor-tag">PML</div><div class="anchor-val" id="anc-pml
+# 渲染 100vh 机构量化看板
+st.components.v1.html(rendered_terminal, height=880, scrolling=False)
