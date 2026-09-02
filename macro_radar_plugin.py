@@ -1,7 +1,8 @@
 # 文件名: macro_radar_plugin.py
-# 作用: 13 核心标的 TradingView 旗舰级交互日线战区穿透与触点罗盘 (主副图严格像素对齐)
+# 作用: Tab 1 旗舰级看板 - 13 标的 Watchlist + TradingView 穿透战区图 + 实操持仓管理输入与形态学/资金滚动 AI 罗盘
 
 import datetime
+import os
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -14,30 +15,54 @@ import yfinance as yf
 tz_ny = pytz.timezone("America/New_York")
 tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 
+PORTFOLIO_FILE = "portfolio_positions.csv"
 TIINGO_TOKEN = "bcffe3a5cf7eeef085e405cfa4a3e5691b976217"
 
-# 13 核心标的配置
+# 13 核心标的配置 (严格锁定 7 巨头 + 6 先锋)
 TICKERS_CONFIG = {
-    "NVDA": {"name": "英伟达", "weight": 3.0},
-    "AAPL": {"name": "苹果", "weight": 3.0},
-    "MSFT": {"name": "微软", "weight": 3.0},
-    "AMZN": {"name": "亚马逊", "weight": 2.0},
-    "GOOGL": {"name": "谷歌", "weight": 2.0},
-    "META": {"name": "Meta", "weight": 2.0},
-    "TSLA": {"name": "特斯拉", "weight": 2.0},
-    "AVGO": {"name": "博通", "weight": 2.0},
-    "MU": {"name": "美光", "weight": 1.0},
-    "AMD": {"name": "AMD", "weight": 1.0},
-    "WDC": {"name": "西部数据", "weight": 1.0},
-    "STX": {"name": "希捷", "weight": 1.0},
-    "SNDK": {"name": "闪迪", "weight": 1.0},
+    "NVDA": {"name": "英伟达", "weight": 3.0, "role": "AI算力总舵手"},
+    "AAPL": {"name": "苹果", "weight": 3.0, "role": "消费电子龙头/防守"},
+    "MSFT": {"name": "微软", "weight": 3.0, "role": "云端权重定海神针"},
+    "AMZN": {"name": "亚马逊", "weight": 2.0, "role": "电商与云权重"},
+    "GOOGL": {"name": "谷歌", "weight": 2.0, "role": "搜索广告权重"},
+    "META": {"name": "Meta", "weight": 2.0, "role": "社交开源生态"},
+    "TSLA": {"name": "特斯拉", "weight": 2.0, "role": "流动性与情绪先锋"},
+    "AVGO": {"name": "博通", "weight": 2.0, "role": "网络芯片与ASIC龙头"},
+    "MU": {"name": "美光", "weight": 1.0, "role": "存储/HBM龙头"},
+    "AMD": {"name": "AMD", "weight": 1.0, "role": "算力二当家"},
+    "WDC": {"name": "西部数据", "weight": 1.0, "role": "存储与硬盘核心"},
+    "STX": {"name": "希捷", "weight": 1.0, "role": "企业级数据中心存储"},
+    "SNDK": {"name": "闪迪", "weight": 1.0, "role": "存储极端情绪标的"},
 }
 
 ALL_SYMBOLS = ["QQQ"] + list(TICKERS_CONFIG.keys())
 
+DEFAULT_INIT_POSITIONS = [
+    {"Symbol": "NVDA", "Shares": 10.0, "AvgCost": 199.987},
+    {"Symbol": "SNDK", "Shares": 1.4281, "AvgCost": 1488.579},
+    {"Symbol": "QQQM", "Shares": 7.0, "AvgCost": 294.530},
+    {"Symbol": "SKHY", "Shares": 4.0, "AvgCost": 171.930},
+    {"Symbol": "DRAM", "Shares": 10.0, "AvgCost": 55.180}
+]
 
+# ================= 1. 持仓本地数据管理 =================
+def load_portfolio_data():
+    if os.path.exists(PORTFOLIO_FILE):
+        try:
+            df = pd.read_csv(PORTFOLIO_FILE)
+            if not df.empty:
+                return df
+        except Exception:
+            pass
+    df_init = pd.DataFrame(DEFAULT_INIT_POSITIONS)
+    df_init.to_csv(PORTFOLIO_FILE, index=False, encoding="utf-8-sig")
+    return df_init
+
+def save_portfolio_data(df):
+    df.to_csv(PORTFOLIO_FILE, index=False, encoding="utf-8-sig")
+
+# ================= 2. 行情数据抓取 =================
 def fetch_from_tiingo_daily(ticker):
-    """Tiingo 备用日线抓取"""
     try:
         start_date = (datetime.datetime.now(tz_ny) - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
         url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate={start_date}&token={TIINGO_TOKEN}"
@@ -54,10 +79,8 @@ def fetch_from_tiingo_daily(ticker):
         pass
     return None
 
-
 @st.cache_data(ttl=300)
 def fetch_watchlist_data():
-    """抓取日线 D1 (6个月) 与周线 W1 (1年) 周期大级别数据"""
     data_daily = {}
     data_weekly = {}
 
@@ -88,6 +111,48 @@ def fetch_watchlist_data():
 
     return data_daily, data_weekly
 
+# ================= 3. 形态学与量化指标计算 =================
+def detect_candlestick_patterns(df_daily):
+    if df_daily is None or len(df_daily) < 4:
+        return "常规走势", "#9CA3AF"
+
+    o3, h3, l3, c3 = df_daily["Open"].iloc[-3], df_daily["High"].iloc[-3], df_daily["Low"].iloc[-3], df_daily["Close"].iloc[-3]
+    o2, h2, l2, c2 = df_daily["Open"].iloc[-2], df_daily["High"].iloc[-2], df_daily["Low"].iloc[-2], df_daily["Close"].iloc[-2]
+    o1, h1, l1, c1 = df_daily["Open"].iloc[-1], df_daily["High"].iloc[-1], df_daily["Low"].iloc[-1], df_daily["Close"].iloc[-1]
+
+    # 早晨之星
+    is_c3_bear = (c3 < o3) and (abs(c3 - o3) >= 0.4 * (h3 - l3))
+    is_c2_star = abs(c2 - o2) <= 0.35 * (h2 - l2) and (h2 < h3)
+    is_c1_bull = (c1 > o1) and (c1 >= (o3 + c3) / 2)
+    if is_c3_bear and is_c2_star and is_c1_bull:
+        return "✨ 早晨之星 (Morning Star 底反)", "#10B981"
+
+    # 黄昏之星
+    is_c3_bull = (c3 > o3) and (abs(c3 - o3) >= 0.4 * (h3 - l3))
+    is_c2_star_top = abs(c2 - o2) <= 0.35 * (h2 - l2) and (h2 > h3)
+    is_c1_bear = (c1 < o1) and (c1 <= (o3 + c3) / 2)
+    if is_c3_bull and is_c2_star_top and is_c1_bear:
+        return "⚠️ 黄昏之星 (Evening Star 顶滞)", "#EF4444"
+
+    # 看涨吞没
+    if (c2 < o2) and (c1 > o1) and (c1 >= o2) and (o1 <= c2):
+        return "🔥 看涨吞没 (Bullish Engulfing)", "#10B981"
+
+    # 看跌吞没
+    if (c2 > o2) and (c1 < o1) and (c1 <= o2) and (o1 >= c2):
+        return "🚨 看跌吞没 (Bearish Engulfing)", "#EF4444"
+
+    # 2B 破底翻
+    prev_low_5 = df_daily["Low"].iloc[-6:-1].min() if len(df_daily) >= 6 else l2
+    if (l1 < prev_low_5) and (c1 > prev_low_5) and (c1 > o1):
+        return "⚓ 2B 破底翻 (2B Bottom 吸筹)", "#3B82F6"
+
+    # 2B 顶
+    prev_high_5 = df_daily["High"].iloc[-6:-1].max() if len(df_daily) >= 6 else h2
+    if (h1 > prev_high_5) and (c1 < prev_high_5) and (c1 < o1):
+        return "🚨 2B 假突破 (2B Top 诱多)", "#F59E0B"
+
+    return "➖ 整理震荡", "#9CA3AF"
 
 def analyze_watchlist_rotation(data_daily, data_weekly):
     if "QQQ" not in data_daily or data_daily["QQQ"].empty:
@@ -104,6 +169,7 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
 
     all_rows = []
     zones_map = {}
+    price_lookup = {}
     bull_count, bear_count = 0, 0
 
     for sym, cfg in TICKERS_CONFIG.items():
@@ -145,6 +211,8 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
             if spread_vs_qqq >= 0: bull_count += 1
             else: bear_count += 1
 
+            pattern_desc, _ = detect_candlestick_patterns(df_s)
+
             dist_ma50_pct = ((c_p - ma50) / ma50) * 100
             dist_pwl_pct = ((c_p - pwl) / pwl) * 100
 
@@ -168,12 +236,12 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
                 "现价 ($)": round(c_p, 2),
                 "日涨跌 (%)": round(chg_d, 2),
                 "相对QQQ (%)": round(spread_vs_qqq, 2),
+                "K线形态": pattern_desc,
                 "买入建仓区间 (Buy)": buy_range_str,
                 "持仓波段区间 (Hold)": hold_range_str,
                 "减仓卖出区间 (Sell)": sell_range_str,
                 "实操指令 (Action)": action,
-                "轮动阶段": phase,
-                "vol_ratio": vol_ratio
+                "轮动阶段": phase
             })
 
             zones_map[sym] = {
@@ -181,6 +249,12 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
                 "hold_low": hold_low, "hold_high": hold_high,
                 "sell_low": sell_low, "sell_high": sell_high,
                 "pwh": pwh, "pwl": pwl, "ma20": ma20, "ma50": ma50
+            }
+
+            price_lookup[sym] = {
+                "price": c_p, "phase": phase, "action": action,
+                "buy_zone": buy_range_str, "sell_zone": sell_range_str,
+                "pattern": pattern_desc
             }
 
         if not found:
@@ -191,13 +265,17 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
                 "现价 ($)": 0.0,
                 "日涨跌 (%)": 0.0,
                 "相对QQQ (%)": 0.0,
+                "K线形态": "⚪ 待同步",
                 "买入建仓区间 (Buy)": "同步中",
                 "持仓波段区间 (Hold)": "同步中",
                 "减仓卖出区间 (Sell)": "同步中",
                 "实操指令 (Action)": "【暂且观望】",
-                "轮动阶段": "⚪ 阶段0: 同步",
-                "vol_ratio": 0.0
+                "轮动阶段": "⚪ 阶段0: 同步"
             })
+            price_lookup[sym] = {
+                "price": 0.0, "phase": "同步中", "action": "观望",
+                "buy_zone": "-", "sell_zone": "-", "pattern": "无"
+            }
 
     if "QQQ" in data_daily and len(data_daily["QQQ"]) >= 20:
         q_df = data_daily["QQQ"]
@@ -210,6 +288,7 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
             "sell_low": q_pwh * 0.985, "sell_high": q_pwh * 1.03,
             "pwh": q_pwh, "pwl": q_pwl, "ma20": qqq_ma20, "ma50": qqq_ma50
         }
+        price_lookup["QQQ"] = {"price": q_cp, "phase": qqq_trend, "action": "大盘基准", "buy_zone": f"${q_pwl:.2f}", "sell_zone": f"${q_pwh:.2f}", "pattern": "基准"}
 
     df_result = pd.DataFrame(all_rows).sort_values(by="相对QQQ (%)", ascending=False)
 
@@ -222,19 +301,17 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
         "bull_count": bull_count,
         "bear_count": bear_count,
         "df_result": df_result,
-        "zones_map": zones_map
+        "zones_map": zones_map,
+        "price_lookup": price_lookup
     }
 
-
+# ================= 4. TradingView 交互日线战区图 =================
 def render_stock_zone_chart(sym, df_daily, zones):
-    """绘制 TradingView 旗舰级 K 线图：主副图严丝合缝垂直对齐"""
     if df_daily is None or df_daily.empty or len(df_daily) < 10:
         st.warning(f"标的 {sym} 暂无足够日线历史数据。")
         return
 
     df = df_daily.tail(75).copy()
-    time_series = df.index.strftime('%Y-%m-%d').tolist()
-
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
     df["VMA20"] = df["Volume"].rolling(20).mean()
@@ -248,13 +325,12 @@ def render_stock_zone_chart(sym, df_daily, zones):
         rows=2, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.03,
-        row_heights=[0.74, 0.26],
-        subplot_titles=(None, None)
+        row_heights=[0.74, 0.26]
     )
 
-    # 1. TradingView 质感 K 线
+    # 1. K 线
     fig.add_trace(go.Candlestick(
-        x=time_series,
+        x=df.index.strftime('%Y-%m-%d'),
         open=df['Open'], high=df['High'],
         low=df['Low'], close=df['Close'],
         name="日线 K 线",
@@ -263,15 +339,15 @@ def render_stock_zone_chart(sym, df_daily, zones):
         line=dict(width=1.2)
     ), row=1, col=1)
 
-    # 2. 均线与机构生命线
+    # 2. 均线
     fig.add_trace(go.Scatter(
-        x=time_series, y=df["MA20"],
+        x=df.index.strftime('%Y-%m-%d'), y=df["MA20"],
         line=dict(color="#F59E0B", width=1.6), name="MA20 (动量生命线)"
     ), row=1, col=1)
 
     fig.add_trace(go.Scatter(
-        x=time_series, y=df["MA50"],
-        line=dict(color="#38BDF8", width=1.8), name="MA50 (机构中枢成本线)"
+        x=df.index.strftime('%Y-%m-%d'), y=df["MA50"],
+        line=dict(color="#38BDF8", width=1.8), name="MA50 (机构成本线)"
     ), row=1, col=1)
 
     # 3. 趋势通道线
@@ -280,7 +356,7 @@ def render_stock_zone_chart(sym, df_daily, zones):
         fig.add_trace(go.Scatter(
             x=last_peaks.index.strftime('%Y-%m-%d'), y=last_peaks["High"],
             mode="lines", line=dict(color="rgba(244, 63, 94, 0.6)", width=1.5, dash="dashdot"),
-            name="波段高点阻力趋势线"
+            name="波段阻力线"
         ), row=1, col=1)
 
     if len(valley_lows) >= 2:
@@ -288,27 +364,15 @@ def render_stock_zone_chart(sym, df_daily, zones):
         fig.add_trace(go.Scatter(
             x=last_valleys.index.strftime('%Y-%m-%d'), y=last_valleys["Low"],
             mode="lines", line=dict(color="rgba(52, 211, 153, 0.6)", width=1.5, dash="dashdot"),
-            name="波段低点支撑趋势线"
+            name="波段支撑线"
         ), row=1, col=1)
 
-    # 4. 战区色带与触点扫描
+    # 4. 实操色带与触点
     annotations = []
     if zones:
-        fig.add_hrect(
-            y0=zones["buy_low"], y1=zones["buy_high"],
-            fillcolor="rgba(16, 185, 129, 0.16)", line_width=1, line_color="#10B981",
-            layer="below", row=1, col=1
-        )
-        fig.add_hrect(
-            y0=zones["hold_low"], y1=zones["hold_high"],
-            fillcolor="rgba(59, 130, 246, 0.08)", line_width=1, line_dash="dash", line_color="rgba(59, 130, 246, 0.4)",
-            layer="below", row=1, col=1
-        )
-        fig.add_hrect(
-            y0=zones["sell_low"], y1=zones["sell_high"],
-            fillcolor="rgba(239, 68, 68, 0.16)", line_width=1, line_color="#EF4444",
-            layer="below", row=1, col=1
-        )
+        fig.add_hrect(y0=zones["buy_low"], y1=zones["buy_high"], fillcolor="rgba(16, 185, 129, 0.16)", line_width=1, line_color="#10B981", layer="below", row=1, col=1)
+        fig.add_hrect(y0=zones["hold_low"], y1=zones["hold_high"], fillcolor="rgba(59, 130, 246, 0.08)", line_width=1, line_dash="dash", line_color="rgba(59, 130, 246, 0.4)", layer="below", row=1, col=1)
+        fig.add_hrect(y0=zones["sell_low"], y1=zones["sell_high"], fillcolor="rgba(239, 68, 68, 0.16)", line_width=1, line_color="#EF4444", layer="below", row=1, col=1)
 
         recent_scan = df.tail(15)
         for d_str, row_k in recent_scan.iterrows():
@@ -330,31 +394,30 @@ def render_stock_zone_chart(sym, df_daily, zones):
                     font=dict(color="#FCA5A5", size=9, family="Consolas")
                 ))
 
-        fig.add_hline(y=zones["pwh"], line_dash="dot", line_color="#FCD34D", line_width=1.2, annotation_text=f" 周高 PWH: ${zones['pwh']:.2f}", annotation_position="top left", row=1, col=1)
-        fig.add_hline(y=zones["pwl"], line_dash="dot", line_color="#93C5FD", line_width=1.2, annotation_text=f" 周低 PWL: ${zones['pwl']:.2f}", annotation_position="bottom left", row=1, col=1)
+        fig.add_hline(y=zones["pwh"], line_dash="dot", line_color="#FCD34D", line_width=1.2, annotation_text=f" 周高: ${zones['pwh']:.2f}", annotation_position="top left", row=1, col=1)
+        fig.add_hline(y=zones["pwl"], line_dash="dot", line_color="#93C5FD", line_width=1.2, annotation_text=f" 周低: ${zones['pwl']:.2f}", annotation_position="bottom left", row=1, col=1)
 
-    # 5. 副图成交量与均量线 (严格绑定相同的分类 X 轴与固定柱体宽度)
+    # 5. 副图成交量
     bar_colors = np.where(df["Close"] >= df["Open"], "#089981", "#F23645")
     fig.add_trace(go.Bar(
-        x=time_series, y=df["Volume"],
-        name="日成交量", marker=dict(color=bar_colors),
-        width=0.65  # 统一柱体宽度
+        x=df.index.strftime('%Y-%m-%d'), y=df["Volume"],
+        name="日成交量", marker=dict(color=bar_colors)
     ), row=2, col=1)
 
     fig.add_trace(go.Scatter(
-        x=time_series, y=df["VMA20"],
+        x=df.index.strftime('%Y-%m-%d'), y=df["VMA20"],
         line=dict(color="#E5E7EB", width=1.2), name="20日均量"
     ), row=2, col=1)
 
     cfg_name = TICKERS_CONFIG.get(sym, {}).get("name", "大盘基准" if sym == "QQQ" else sym)
-    
+
     fig.update_layout(
         title=dict(
-            text=f"<b>{sym} ({cfg_name}) 旗舰日线战区走势</b> <span style='font-size:12px; color:#94A3B8;'>[滚轮缩放 / 拖拽平移 / 双击复位]</span>",
+            text=f"<b>{sym} ({cfg_name}) 日线战区穿透分析</b> <span style='font-size:12px; color:#94A3B8;'>[滚轮缩放 / 拖拽平移 / 双击复位]</span>",
             font=dict(family="Consolas, monospace", size=14, color="#F8FAFC"),
             x=0.01, y=0.98
         ),
-        height=580,
+        height=540,
         margin=dict(l=10, r=10, t=45, b=10),
         template="plotly_dark",
         paper_bgcolor="#0B0F19",
@@ -369,187 +432,32 @@ def render_stock_zone_chart(sym, df_daily, zones):
         annotations=annotations
     )
 
-    fig.update_xaxes(
-        type="category", gridcolor="#1E293B", tickfont=dict(family="Consolas", color="#94A3B8", size=10),
-        showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#64748B", spikethickness=1, spikedash="dot",
-        row=1, col=1
-    )
-    fig.update_xaxes(
-        type="category", gridcolor="#1E293B", tickfont=dict(family="Consolas", color="#94A3B8", size=10),
-        showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#64748B", spikethickness=1, spikedash="dot",
-        row=2, col=1
-    )
-    fig.update_yaxes(
-        gridcolor="#1E293B", tickfont=dict(family="Consolas", color="#94A3B8", size=10),
-        showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#64748B", spikethickness=1, spikedash="dot",
-        row=1, col=1
-    )
-    fig.update_yaxes(
-        gridcolor="#1E293B", tickfont=dict(family="Consolas", color="#64748B", size=9),
-        row=2, col=1
-    )
+    fig.update_xaxes(type="category", gridcolor="#1E293B", showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#64748B", spikethickness=1, spikedash="dot", row=1, col=1)
+    fig.update_yaxes(gridcolor="#1E293B", showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="#64748B", spikethickness=1, spikedash="dot", row=1, col=1)
+    fig.update_yaxes(gridcolor="#1E293B", row=2, col=1)
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "scrollZoom": True,
-            "displayModeBar": True,
-            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-            "displaylogo": False,
-            "toImageButtonOptions": {"format": "png", "filename": f"{sym}_daily_chart"}
-        }
-    )
+    st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "displaylogo": False})
 
-
-def generate_facts_markdown(res):
-    """构建给 AI 诊断的纯客观事实数据"""
-    df = res["df_result"]
-    md = f"""# 📡 QQQ 宏观与 13 核心标的客观买卖点事实战报 (Facts Only)
-
-### 1. QQQ 宏观风向中枢
-- **截面时间**: `{res['timestamp_myt']}` (美东 `{res['timestamp_ny']}`)
-- **QQQ 指数基准**: 现价 `${res['qqq_curr']:.2f}` ({res['qqq_chg_d']:+.2f}%) | 日线大趋势: `{res['qqq_trend']}`
-- **全场多空分布**: 共 `{res['bull_count']}/13` 只跑赢大盘 (跑输 `{res['bear_count']}/13` 只)
-
-### 2. 13 核心标的买入/持仓/卖出区间与实操指令表
-| 标的 | 现价 ($) | 日涨跌 (%) | 相对QQQ (%) | 买入建仓区间 (Buy) | 持仓波段区间 (Hold) | 减仓卖出区间 (Sell) | 实操指令 (Action) |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-"""
-    for _, r in df.iterrows():
-        md += f"| **{r['标的']}** | {r['现价 ($)']:.2f} | {r['日涨跌 (%)']:+.2f}% | {r['相对QQQ (%)']:+.2f}% | {r['买入建仓区间 (Buy)']} | {r['持仓波段区间 (Hold)']} | {r['减仓卖出区间 (Sell)']} | {r['实操指令 (Action)']} |\n"
-
-    md += """
----
-### 🤖 给 AI 的诊断 Prompt:
-请依据上述 13 核心标的的现价所处区间（Buy / Hold / Sell Area）与相对 QQQ 强弱：
-1. 诊断哪些标的已回踩进入【买入建仓区域】且量能缩量企稳，适合挂单分批买入；
-2. 诊断哪些标的已逼近【减仓卖出区域】需要止盈落袋；
-3. 结合 13 标的结构判定今晚 QQQ 大盘走向与防守策略。
-"""
-    return md
-
-
-def render_macro_radar_tab():
-    st.subheader("📋 13 核心标的宏观 Watchlist (买卖点位罗盘 & 日线战区图)")
-
-    c1, c2 = st.columns([4, 1])
-    with c1:
-        st.caption("基于日线 D1 均线与周线 W1 极值量化买入/持仓/卖出价格区间。点击下方标的按钮即可穿透查看单股日线图、三大战区色带与触点分析。")
-    with c2:
-        if st.button("🔄 刷新 Watchlist", key="btn_refresh_watchlist_v9"):
-            st.cache_data.clear()
-            st.rerun()
-
-    with st.spinner("正在提取日周线行情并计算买卖点位区间..."):
-        d_daily, d_weekly = fetch_watchlist_data()
-
-    res = analyze_watchlist_rotation(d_daily, d_weekly)
-    if not res:
-        st.warning("行情连接中，请稍后点击上方刷新。")
-        return
-
-    bull_cnt = res["bull_count"]
-    bear_cnt = res["bear_count"]
-
-    # 1. 顶部导入
-from portfolio_manager_plugin import render_portfolio_expansion
-
-# 2. 在 render_macro_radar_tab() 函数最底部调用:
-price_lookup = {}
-for _, r in df_show.iterrows():
-    s_raw = r["标的"].split()[0]
-    price_lookup[s_raw] = {
-        "price": float(r["现价 ($)"]),
-        "phase": r["轮动阶段"],
-        "buy_zone": r["买入建仓区间 (Buy)"],
-        "sell_zone": r["减仓卖出区间 (Sell)"],
-    }
-
-# 挂载包含输入框与形态学诊断的持仓罗盘
-render_portfolio_expansion(df_show, price_lookup, d_daily)
-
-
-    # 1. 顶层：QQQ 大盘宏观指标条
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("🎯 QQQ 现价", f"${res['qqq_curr']:.2f}", f"{res['qqq_chg_d']:+.2f}%")
-    m2.metric("📈 QQQ 日线大趋势", res["qqq_trend"])
-    m3.metric("🟢 水上跑赢大盘", f"{bull_cnt} 只", f"占比 {(bull_cnt/13)*100:.0f}%")
-    m4.metric("🔴 水下跑输大盘", f"{bear_cnt} 只", f"占比 {(bear_cnt/13)*100:.0f}%")
-
+# ================= 5. 实操持仓管理输入框与资金滚动 =================
+def render_portfolio_section(price_lookup, data_daily):
     st.markdown("---")
+    st.subheader("💼 我的实操持仓与资金滚动罗盘")
+    st.caption("支持手动录入与调仓。系统自动结合形态学（晨星/暮星/吞没/2B）与资金轮动输出调仓建议。")
 
-    # 2. 中部：包含精准价格区间的专业 Watchlist 表格
-    st.markdown("#### 📊 13 核心标的精准点位 Watchlist (从强到弱)")
-    
-    df_show = res["df_result"][["标的", "现价 ($)", "日涨跌 (%)", "相对QQQ (%)", "买入建仓区间 (Buy)", "持仓波段区间 (Hold)", "减仓卖出区间 (Sell)", "实操指令 (Action)"]]
+    df_pos = load_portfolio_data()
 
-    def style_watchlist(row):
-        styles = [""] * len(row)
-        chg_idx = df_show.columns.get_loc("日涨跌 (%)")
-        sp_idx = df_show.columns.get_loc("相对QQQ (%)")
-        act_idx = df_show.columns.get_loc("实操指令 (Action)")
-        buy_idx = df_show.columns.get_loc("买入建仓区间 (Buy)")
-        sell_idx = df_show.columns.get_loc("减仓卖出区间 (Sell)")
-
-        chg_val = row["日涨跌 (%)"]
-        sp_val = row["相对QQQ (%)"]
-        act_val = row["实操指令 (Action)"]
-
-        if chg_val > 0:
-            styles[chg_idx] = "color: #10B981; font-weight: bold;"
-        elif chg_val < 0:
-            styles[chg_idx] = "color: #EF4444; font-weight: bold;"
-
-        if sp_val >= 0:
-            styles[sp_idx] = "color: #10B981; font-weight: bold;"
-        else:
-            styles[sp_idx] = "color: #EF4444; font-weight: bold;"
-
-        styles[buy_idx] = "color: #93C5FD;"
-        styles[sell_idx] = "color: #FCD34D;"
-
-        if "分批买入" in act_val:
-            styles[act_idx] = "background-color: #1E3A8A; color: #93C5FD; font-weight: bold;"
-        elif "加仓" in act_val:
-            styles[act_idx] = "background-color: #064E3B; color: #6EE7B7; font-weight: bold;"
-        elif "止盈" in act_val:
-            styles[act_idx] = "background-color: #78350F; color: #FCD34D; font-weight: bold;"
-        elif "坚决观望" in act_val:
-            styles[act_idx] = "background-color: #7F1D1D; color: #FCA5A5; font-weight: bold;"
-
-        return styles
-
-    styled_df = df_show.style.apply(style_watchlist, axis=1)
-    st.dataframe(styled_df, use_container_width=True, height=380, hide_index=True)
-
-    st.markdown("---")
-
-    # 3. 核心交互层：TradingView 旗舰穿透日线图表
-    st.markdown("#### 🎯 单股日线战区穿透分析与触点扫描 (点击切换标的)")
-
-    chip_options = ["QQQ"] + list(TICKERS_CONFIG.keys())
-    if "selected_chart_sym" not in st.session_state:
-        st.session_state["selected_chart_sym"] = "NVDA"
-
-    chip_cols = st.columns(len(chip_options))
-    for idx, sym_opt in enumerate(chip_options):
-        with chip_cols[idx]:
-            is_active = (st.session_state["selected_chart_sym"] == sym_opt)
-            btn_label = f"👉 {sym_opt}" if is_active else sym_opt
-            if st.button(btn_label, key=f"chip_btn_{sym_opt}"):
-                st.session_state["selected_chart_sym"] = sym_opt
-                st.rerun()
-
-    active_sym = st.session_state["selected_chart_sym"]
-    sym_zones = res["zones_map"].get(active_sym)
-    df_active = d_daily.get(active_sym)
-
-    render_stock_zone_chart(active_sym, df_active, sym_zones)
-
-    st.markdown("---")
-
-    # 4. 底部：纯净 Markdown 事实数据包一键复制
-    st.markdown("#### 🤖 AI 深度分析数据包 (点击右上角一键复制)")
-    ai_md = generate_facts_markdown(res)
-    st.code(ai_md, language="markdown")
+    # 1. 顶部输入框
+    st.markdown("##### 📝 实操资产与调仓输入框")
+    col_in1, col_in2, col_in3, col_in4, col_in5 = st.columns([1.5, 1.2, 1.2, 1.5, 1.0])
+    with col_in1:
+        cash_capital = st.number_input("💵 可用现金 Capital ($)", min_value=0.0, value=float(st.session_state.get("user_cash", 3.95)), step=100.0, key="in_cash_cap")
+        st.session_state["user_cash"] = cash_capital
+    with col_in2:
+        in_sym = st.text_input("股票代码", value="NVDA", key="in_pos_sym").upper().strip()
+    with col_in3:
+        in_shares = st.number_input("持股数量", min_value=0.0001, value=10.0, step=1.0, key="in_pos_shares")
+    with col_in4:
+        def_cost = price_lookup.get(in_sym, {}).get("price", 100.0) if in_sym in price_lookup else 100.0
+        in_cost = st.number_input("买入成本 ($)", min_value=0.01, value=float(def_cost) if def_cost > 0 else 100.0, step=1.0, key="in_pos_cost")
+    with col_in5:
+        st.markdown("<div 
