@@ -1,5 +1,5 @@
 # 文件名: app.py
-# 作用: 癸水 · QQQ 战区座舱（4 大独立垂直 Tab 导航 + 独立资金持仓滚动罗盘 + 5日宽屏月历）
+# 作用: 癸水 · QQQ 战区座舱（4 大独立垂直 Tab 导航 + 独立资金持仓滚动罗盘）
 
 import calendar
 import datetime
@@ -196,13 +196,8 @@ with col_main:
             d_daily_p, d_weekly_p = fetch_watchlist_data()
             res_p = analyze_watchlist_rotation(d_daily_p, d_weekly_p)
             
-        if res_p and isinstance(res_p, dict):
-            render_portfolio_expansion(
-                df_watchlist_summary=res_p.get("df_result", None),
-                price_dict=res_p.get("price_lookup", {})
-            )
-        else:
-            render_portfolio_expansion(None, {})
+        p_dict = res_p.get("price_lookup", {}) if (res_p and isinstance(res_p, dict)) else {}
+        render_portfolio_expansion(price_dict=p_dict)
 
     # ================= TAB 3: 战区富途代码 =================
     elif st.session_state["active_main_tab"] == "tab3_cockpit":
@@ -327,13 +322,13 @@ with col_main:
 
         c_y, c_m, c_exp = st.columns([1, 1, 2])
         with c_y:
-            sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker_tab4_clean")
+            sel_y = st.selectbox("年份选择", [2026, 2025, 2024], index=0, key="sel_y_picker_tab4_final")
         with c_m:
-            sel_m = st.selectbox("月份选择", list(range(1, 13)), index=now_myt.month - 1, key="sel_m_picker_tab4_clean")
+            sel_m = st.selectbox("月份选择", list(range(1, 13)), index=now_myt.month - 1, key="sel_m_picker_tab4_final")
 
         col_btn1, col_btn2, col_btn3 = st.columns([1.5, 2, 1.5])
         with col_btn1:
-            if st.button("🛠️ 结算昨夜 22:00-24:00 账本", key="btn_settle_yest_journal_tab4_clean"):
+            if st.button("🛠️ 结算昨夜 22:00-24:00 账本", key="btn_settle_yest_journal_tab4_final"):
                 with st.spinner("正在核算昨夜交易..."):
                     d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="5d")
                     target_d = now_myt.date() - timedelta(days=1) if now_myt.hour < 22 else now_myt.date()
@@ -349,7 +344,7 @@ with col_main:
                         else: st.warning(msg)
 
         with col_btn2:
-            if st.button(f"⚡ 一键回溯/刷新 {sel_y}年{sel_m}月 历史账本", key="btn_backfill_monthly_journal_tab4_clean"):
+            if st.button(f"⚡ 一键回溯/刷新 {sel_y}年{sel_m}月 历史账本", key="btn_backfill_monthly_journal_tab4_final"):
                 with st.spinner(f"正在回溯计算 {sel_y} 年 {sel_m} 月数据..."):
                     d1h, d5m, _ = fetch_raw_data_with_retry(period_5m="1mo")
                     if d1h is not None and d5m is not None:
@@ -372,7 +367,7 @@ with col_main:
                         st.rerun()
 
         with col_btn3:
-            if st.button("🗑️ 清空历史账本重新生成", key="btn_clear_journal_file_tab4_clean"):
+            if st.button("🗑️ 清空历史账本重新生成", key="btn_clear_journal_file_tab4_final"):
                 if os.path.exists("monthly_trade_records.csv"):
                     os.remove("monthly_trade_records.csv")
                     st.success("账本已清空！")
@@ -470,7 +465,7 @@ with col_main:
                                 """, unsafe_allow_html=True)
                                 
                                 btn_label = "👉 正在看" if is_active else "🔍 查图"
-                                if st.button(btn_label, key=f"btn_cal_5d_clean_{this_date_str}"):
+                                if st.button(btn_label, key=f"btn_cal_5d_final_{this_date_str}"):
                                     st.session_state["active_chart_date"] = this_date_str
                                     st.rerun()
                             else:
@@ -533,7 +528,7 @@ with col_main:
                 with chip_cols[c_i]:
                     is_sel = (r_date == active_date)
                     label = f"👉 {r_date[-5:]}" if is_sel else f"{r_date[-5:]}"
-                    if st.button(label, key=f"chip_jump_clean_{r_date}"):
+                    if st.button(label, key=f"chip_jump_final_{r_date}"):
                         st.session_state["active_chart_date"] = r_date
                         st.rerun()
 
