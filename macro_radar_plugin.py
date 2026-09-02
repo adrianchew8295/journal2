@@ -18,7 +18,7 @@ tz_myt = pytz.timezone("Asia/Kuala_Lumpur")
 PORTFOLIO_FILE = "portfolio_positions.csv"
 TIINGO_TOKEN = "bcffe3a5cf7eeef085e405cfa4a3e5691b976217"
 
-# 13 核心标的配置 (严格锁定 7 巨头 + 6 先锋)
+# 13 核心标的配置
 TICKERS_CONFIG = {
     "NVDA": {"name": "英伟达", "weight": 3.0, "role": "AI算力总舵手"},
     "AAPL": {"name": "苹果", "weight": 3.0, "role": "消费电子龙头/防守"},
@@ -45,7 +45,6 @@ DEFAULT_INIT_POSITIONS = [
     {"Symbol": "DRAM", "Shares": 10.0, "AvgCost": 55.180}
 ]
 
-# ================= 1. 持仓本地数据管理 =================
 def load_portfolio_data():
     if os.path.exists(PORTFOLIO_FILE):
         try:
@@ -61,7 +60,6 @@ def load_portfolio_data():
 def save_portfolio_data(df):
     df.to_csv(PORTFOLIO_FILE, index=False, encoding="utf-8-sig")
 
-# ================= 2. 行情数据抓取 =================
 def fetch_from_tiingo_daily(ticker):
     try:
         start_date = (datetime.datetime.now(tz_ny) - datetime.timedelta(days=180)).strftime("%Y-%m-%d")
@@ -111,7 +109,6 @@ def fetch_watchlist_data():
 
     return data_daily, data_weekly
 
-# ================= 3. 形态学与量化指标计算 =================
 def detect_candlestick_patterns(df_daily):
     if df_daily is None or len(df_daily) < 4:
         return "常规走势", "#9CA3AF"
@@ -147,7 +144,7 @@ def detect_candlestick_patterns(df_daily):
     if (l1 < prev_low_5) and (c1 > prev_low_5) and (c1 > o1):
         return "⚓ 2B 破底翻 (2B Bottom 吸筹)", "#3B82F6"
 
-    # 2B 顶
+    # 2B 假突破
     prev_high_5 = df_daily["High"].iloc[-6:-1].max() if len(df_daily) >= 6 else h2
     if (h1 > prev_high_5) and (c1 < prev_high_5) and (c1 < o1):
         return "🚨 2B 假突破 (2B Top 诱多)", "#F59E0B"
@@ -212,7 +209,6 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
             else: bear_count += 1
 
             pattern_desc, _ = detect_candlestick_patterns(df_s)
-
             dist_ma50_pct = ((c_p - ma50) / ma50) * 100
             dist_pwl_pct = ((c_p - pwl) / pwl) * 100
 
@@ -305,7 +301,6 @@ def analyze_watchlist_rotation(data_daily, data_weekly):
         "price_lookup": price_lookup
     }
 
-# ================= 4. TradingView 交互日线战区图 =================
 def render_stock_zone_chart(sym, df_daily, zones):
     if df_daily is None or df_daily.empty or len(df_daily) < 10:
         st.warning(f"标的 {sym} 暂无足够日线历史数据。")
@@ -328,7 +323,6 @@ def render_stock_zone_chart(sym, df_daily, zones):
         row_heights=[0.74, 0.26]
     )
 
-    # 1. K 线
     fig.add_trace(go.Candlestick(
         x=df.index.strftime('%Y-%m-%d'),
         open=df['Open'], high=df['High'],
@@ -339,35 +333,16 @@ def render_stock_zone_chart(sym, df_daily, zones):
         line=dict(width=1.2)
     ), row=1, col=1)
 
-    # 2. 均线
     fig.add_trace(go.Scatter(
         x=df.index.strftime('%Y-%m-%d'), y=df["MA20"],
-        line=dict(color="#F59E0B", width=1.6), name="MA20 (动量生命线)"
+        line=dict(color="#F59E0B", width=1.6), name="MA20"
     ), row=1, col=1)
 
     fig.add_trace(go.Scatter(
         x=df.index.strftime('%Y-%m-%d'), y=df["MA50"],
-        line=dict(color="#38BDF8", width=1.8), name="MA50 (机构成本线)"
+        line=dict(color="#38BDF8", width=1.8), name="MA50"
     ), row=1, col=1)
 
-    # 3. 趋势通道线
-    if len(peak_highs) >= 2:
-        last_peaks = peak_highs.tail(3)
-        fig.add_trace(go.Scatter(
-            x=last_peaks.index.strftime('%Y-%m-%d'), y=last_peaks["High"],
-            mode="lines", line=dict(color="rgba(244, 63, 94, 0.6)", width=1.5, dash="dashdot"),
-            name="波段阻力线"
-        ), row=1, col=1)
-
-    if len(valley_lows) >= 2:
-        last_valleys = valley_lows.tail(3)
-        fig.add_trace(go.Scatter(
-            x=last_valleys.index.strftime('%Y-%m-%d'), y=last_valleys["Low"],
-            mode="lines", line=dict(color="rgba(52, 211, 153, 0.6)", width=1.5, dash="dashdot"),
-            name="波段支撑线"
-        ), row=1, col=1)
-
-    # 4. 实操色带与触点
     annotations = []
     if zones:
         fig.add_hrect(y0=zones["buy_low"], y1=zones["buy_high"], fillcolor="rgba(16, 185, 129, 0.16)", line_width=1, line_color="#10B981", layer="below", row=1, col=1)
@@ -397,7 +372,6 @@ def render_stock_zone_chart(sym, df_daily, zones):
         fig.add_hline(y=zones["pwh"], line_dash="dot", line_color="#FCD34D", line_width=1.2, annotation_text=f" 周高: ${zones['pwh']:.2f}", annotation_position="top left", row=1, col=1)
         fig.add_hline(y=zones["pwl"], line_dash="dot", line_color="#93C5FD", line_width=1.2, annotation_text=f" 周低: ${zones['pwl']:.2f}", annotation_position="bottom left", row=1, col=1)
 
-    # 5. 副图成交量
     bar_colors = np.where(df["Close"] >= df["Open"], "#089981", "#F23645")
     fig.add_trace(go.Bar(
         x=df.index.strftime('%Y-%m-%d'), y=df["Volume"],
@@ -413,7 +387,7 @@ def render_stock_zone_chart(sym, df_daily, zones):
 
     fig.update_layout(
         title=dict(
-            text=f"<b>{sym} ({cfg_name}) 日线战区穿透分析</b> <span style='font-size:12px; color:#94A3B8;'>[滚轮缩放 / 拖拽平移 / 双击复位]</span>",
+            text=f"<b>{sym} ({cfg_name}) 日线战区穿透分析</b>",
             font=dict(family="Consolas, monospace", size=14, color="#F8FAFC"),
             x=0.01, y=0.98
         ),
@@ -438,7 +412,6 @@ def render_stock_zone_chart(sym, df_daily, zones):
 
     st.plotly_chart(fig, use_container_width=True, config={"scrollZoom": True, "displayModeBar": True, "displaylogo": False})
 
-# ================= 5. 实操持仓管理输入框与资金滚动 =================
 def render_portfolio_section(price_lookup, data_daily):
     st.markdown("---")
     st.subheader("💼 我的实操持仓与资金滚动罗盘")
@@ -460,4 +433,234 @@ def render_portfolio_section(price_lookup, data_daily):
         def_cost = price_lookup.get(in_sym, {}).get("price", 100.0) if in_sym in price_lookup else 100.0
         in_cost = st.number_input("买入成本 ($)", min_value=0.01, value=float(def_cost) if def_cost > 0 else 100.0, step=1.0, key="in_pos_cost")
     with col_in5:
-        st.markdown("<div 
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if st.button("💾 存入/更新", key="btn_save_pos_manual"):
+            if in_sym:
+                if not df_pos.empty and in_sym in df_pos["Symbol"].values:
+                    df_pos.loc[df_pos["Symbol"] == in_sym, ["Shares", "AvgCost"]] = [in_shares, in_cost]
+                else:
+                    new_row = pd.DataFrame([{"Symbol": in_sym, "Shares": in_shares, "AvgCost": in_cost}])
+                    df_pos = pd.concat([df_pos, new_row], ignore_index=True)
+                save_portfolio_data(df_pos)
+                st.success(f"已成功更新 {in_sym} 持仓！")
+                st.rerun()
+
+    rows_summary = []
+    total_market_val = 0.0
+    total_unrealized_pnl = 0.0
+
+    if not df_pos.empty:
+        for idx, r in df_pos.iterrows():
+            sym = str(r["Symbol"]).upper().strip()
+            shares = float(r["Shares"])
+            cost = float(r["AvgCost"])
+            cost_total = shares * cost
+
+            curr_info = price_lookup.get(sym, None)
+            df_s = data_daily.get(sym, None)
+            pattern_txt, _ = detect_candlestick_patterns(df_s)
+
+            if curr_info and curr_info.get("price", 0) > 0:
+                curr_p = float(curr_info["price"])
+                buy_zone = curr_info.get("buy_zone", "-")
+                sell_zone = curr_info.get("sell_zone", "-")
+                phase = curr_info.get("phase", "阶段2")
+            else:
+                curr_p = cost
+                buy_zone = "-"
+                sell_zone = "-"
+                phase = "同步中"
+
+            market_val = shares * curr_p
+            pnl_dollar = market_val - cost_total
+            pnl_pct = (pnl_dollar / cost_total) * 100 if cost_total > 0 else 0.0
+
+            if "黄昏之星" in pattern_txt or "看跌吞没" in pattern_txt or "2B Top" in pattern_txt or "滞涨" in phase:
+                action_advice = "🚨 建议减仓/卖出 (锁定利润，释放资金)"
+            elif "早晨之星" in pattern_txt or "看涨吞没" in pattern_txt or "2B Bottom" in pattern_txt:
+                action_advice = "🟢 强力买入/补仓 (经典反转形态确立)"
+            elif "主升" in phase:
+                action_advice = "🚀 顺势持有 (主升浪奔跑，保本止损)"
+            elif "破位" in phase:
+                action_advice = "⚠️ 设防支撑 (跌破止损，严禁盲目加仓)"
+            else:
+                action_advice = "⚪ 防守持有/观望"
+
+            total_market_val += market_val
+            total_unrealized_pnl += pnl_dollar
+
+            rows_summary.append({
+                "代码": sym,
+                "持股数": round(shares, 4) if shares % 1 != 0 else int(shares),
+                "成本 ($)": round(cost, 2),
+                "现价 ($)": round(curr_p, 2),
+                "市值 ($)": round(market_val, 2),
+                "浮动盈亏 ($)": round(pnl_dollar, 2),
+                "盈亏率 (%)": round(pnl_pct, 2),
+                "K线形态": pattern_txt,
+                "减仓卖出区": sell_zone,
+                "实操指令": action_advice
+            })
+
+    total_account_nav = total_market_val + cash_capital
+    total_cost_basis = total_market_val - total_unrealized_pnl
+    total_pnl_pct = (total_unrealized_pnl / total_cost_basis * 100) if total_cost_basis > 0 else 0.0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("💰 账户总资产 (NAV)", f"${total_account_nav:,.2f}", f"整体盈亏: {total_pnl_pct:+.2f}%")
+    m2.metric("📊 持仓总市值", f"${total_market_val:,.2f}", f"仓位: {(total_market_val/total_account_nav*100):.1f}%" if total_account_nav > 0 else "0%")
+    m3.metric("💵 可用现金 Capital", f"${cash_capital:,.2f}", "机动流动性")
+    m4.metric("📈 浮动总盈亏", f"{total_unrealized_pnl:+,.2f} USD", f"{total_pnl_pct:+.2f}%")
+
+    st.markdown("---")
+
+    if rows_summary:
+        st.markdown("##### 📋 持仓资产与形态诊断明细")
+        df_display = pd.DataFrame(rows_summary)
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+        with st.expander("🗑️ 平仓 / 移除某只持仓代码"):
+            del_sym = st.selectbox("选择平仓标的", options=df_pos["Symbol"].tolist(), key="del_pos_picker_tab1")
+            if st.button(f"确认清仓移除 {del_sym}", key="btn_confirm_del_tab1"):
+                df_pos = df_pos[df_pos["Symbol"] != del_sym]
+                save_portfolio_data(df_pos)
+                st.success(f"已成功平仓移除 {del_sym}！")
+                st.rerun()
+
+    st.markdown("---")
+    st.markdown("##### 🎯 闲置现金滚动买入推荐池")
+    held_syms = df_pos["Symbol"].tolist() if not df_pos.empty else []
+
+    buy_candidates = []
+    if isinstance(price_lookup, dict):
+        for s, v in price_lookup.items():
+            if s not in held_syms and ("筑底" in v.get("phase", "") or "分批买入" in v.get("action", "") or "早晨之星" in v.get("pattern", "")):
+                buy_candidates.append({"sym": s, "price": v.get("price", 0.0), "action": v.get("action", ""), "buy_zone": v.get("buy_zone", "-")})
+
+    c_rec1, c_rec2 = st.columns(2)
+    with c_rec1:
+        st.markdown("🟢 **推荐逢低建仓池 (阶段1 / 反转形态)**")
+        if buy_candidates:
+            for b in buy_candidates:
+                p = b["price"]
+                max_s = int(cash_capital // p) if p > 0 else 0
+                st.success(f"**{b['sym']}** | 现价: `${p:.2f}` | 建仓区: `{b['buy_zone']}` | 可买: `{max_s} 股`\n\n*建议*: `{b['action']}`")
+        else:
+            st.info("当前 13 监控池中暂无可逢低建仓的未持仓标的。")
+
+    with c_rec2:
+        st.markdown("💡 **资金滚动调仓法则**")
+        st.write("1. 持仓股进入 **⚠️ 阶段3 (滞涨)** 或出现 **黄昏之星/看跌吞没** 时，逢高部分减仓换回现金；")
+        st.write("2. 将收回的现金滚动买入左侧 **🟢 阶段1 (筑底)** 或出现 **早晨之星** 的新龙头。")
+
+    st.markdown("---")
+    st.markdown("#### 🤖 AI 形态与资产滚动诊断数据包 (点击右上角复制)")
+    md_report = f"""# 💼 交易员实操持仓与形态学精准买卖点 AI 战报
+
+### 1. 账户资产全景
+- **总资产 (NAV)**: `${total_account_nav:,.2f}` | **持仓总市值**: `${total_market_val:,.2f}` | **可用现金**: `${cash_capital:,.2f}`
+- **浮动总盈亏**: `${total_unrealized_pnl:+,.2f}` ({total_pnl_pct:+.2f}%)
+
+### 2. 持仓形态学与买卖点分析
+| 代码 | 股数 | 成本 ($) | 现价 ($) | 盈亏 ($ / %) | K线形态分析 | 减仓目标区 | 实操指令 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+"""
+    for r in rows_summary:
+        md_report += f"| **{r['代码']}** | {r['持股数']} | {r['成本 ($)']:.2f} | {r['现价 ($)']:.2f} | {r['浮动盈亏 ($)']:+.2f} ({r['盈亏率 (%)']:+.2f}%) | {r['K线形态']} | {r['减仓卖出区']} | {r['实操指令']} |\n"
+
+    md_report += f"""
+---
+### 💡 给 AI 的诊断 Prompt:
+请依据以上持仓的 K 线形态学（Morning Star / Evening Star / Engulfing / 2B）、买卖点区间与可用现金 `${cash_capital:,.2f}`：
+1. 评估是否有标的出现见顶形态（如黄昏之星/看跌吞没）需要立即减仓；
+2. 结合 13 核心标的，指出哪些未持仓标的出现了早晨之星或看涨吞没反转，建议如何分批建仓；
+3. 给出精准的进场价、止损价与 1:2 止盈目标位。
+"""
+    st.code(md_report, language="markdown")
+
+def render_macro_radar_tab():
+    st.subheader("📋 13 核心标的宏观 Watchlist (买卖点位罗盘 & 日线战区图)")
+
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        st.caption("基于日线 D1 均线与周线 W1 极值量化买入/持仓/卖出价格区间与形态学。点击下方标的按钮可穿透查看单股日线图。")
+    with c2:
+        if st.button("🔄 刷新全景数据", key="btn_refresh_macro_full_v9"):
+            st.cache_data.clear()
+            st.rerun()
+
+    with st.spinner("正在提取日周线行情并计算买卖点位区间..."):
+        d_daily, d_weekly = fetch_watchlist_data()
+
+    res = analyze_watchlist_rotation(d_daily, d_weekly)
+    if not res:
+        st.warning("行情连接中，请稍后点击上方刷新。")
+        return
+
+    bull_cnt = res["bull_count"]
+    bear_cnt = res["bear_count"]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("🎯 QQQ 现价", f"${res['qqq_curr']:.2f}", f"{res['qqq_chg_d']:+.2f}%")
+    m2.metric("📈 QQQ 日线大趋势", res["qqq_trend"])
+    m3.metric("🟢 水上跑赢大盘", f"{bull_cnt} 只", f"占比 {(bull_cnt/13)*100:.0f}%")
+    m4.metric("🔴 水下跑输大盘", f"{bear_cnt} 只", f"占比 {(bear_cnt/13)*100:.0f}%")
+
+    st.markdown("---")
+    st.markdown("#### 📊 13 核心标的精准点位与形态 Watchlist (从强到弱)")
+    
+    df_show = res["df_result"][["标的", "现价 ($)", "日涨跌 (%)", "相对QQQ (%)", "K线形态", "买入建仓区间 (Buy)", "持仓波段区间 (Hold)", "减仓卖出区间 (Sell)", "实操指令 (Action)"]]
+
+    def style_watchlist(row):
+        styles = [""] * len(row)
+        chg_idx = df_show.columns.get_loc("日涨跌 (%)")
+        sp_idx = df_show.columns.get_loc("相对QQQ (%)")
+        act_idx = df_show.columns.get_loc("实操指令 (Action)")
+        buy_idx = df_show.columns.get_loc("买入建仓区间 (Buy)")
+        sell_idx = df_show.columns.get_loc("减仓卖出区间 (Sell)")
+
+        chg_val = row["日涨跌 (%)"]
+        sp_val = row["相对QQQ (%)"]
+        act_val = row["实操指令 (Action)"]
+
+        if chg_val > 0: styles[chg_idx] = "color: #10B981; font-weight: bold;"
+        elif chg_val < 0: styles[chg_idx] = "color: #EF4444; font-weight: bold;"
+
+        if sp_val >= 0: styles[sp_idx] = "color: #10B981; font-weight: bold;"
+        else: styles[sp_idx] = "color: #EF4444; font-weight: bold;"
+
+        styles[buy_idx] = "color: #93C5FD;"
+        styles[sell_idx] = "color: #FCD34D;"
+
+        if "分批买入" in act_val: styles[act_idx] = "background-color: #1E3A8A; color: #93C5FD; font-weight: bold;"
+        elif "加仓" in act_val: styles[act_idx] = "background-color: #064E3B; color: #6EE7B7; font-weight: bold;"
+        elif "止盈" in act_val: styles[act_idx] = "background-color: #78350F; color: #FCD34D; font-weight: bold;"
+        elif "坚决观望" in act_val: styles[act_idx] = "background-color: #7F1D1D; color: #FCA5A5; font-weight: bold;"
+
+        return styles
+
+    styled_df = df_show.style.apply(style_watchlist, axis=1)
+    st.dataframe(styled_df, use_container_width=True, height=380, hide_index=True)
+
+    st.markdown("---")
+    st.markdown("#### 🎯 单股日线战区穿透分析与触点扫描 (点击切换标的)")
+
+    chip_options = ["QQQ"] + list(TICKERS_CONFIG.keys())
+    if "selected_chart_sym" not in st.session_state:
+        st.session_state["selected_chart_sym"] = "NVDA"
+
+    chip_cols = st.columns(len(chip_options))
+    for idx, sym_opt in enumerate(chip_options):
+        with chip_cols[idx]:
+            is_active = (st.session_state["selected_chart_sym"] == sym_opt)
+            btn_label = f"👉 {sym_opt}" if is_active else sym_opt
+            if st.button(btn_label, key=f"chip_btn_{sym_opt}"):
+                st.session_state["selected_chart_sym"] = sym_opt
+                st.rerun()
+
+    active_sym = st.session_state["selected_chart_sym"]
+    sym_zones = res["zones_map"].get(active_sym)
+    df_active = d_daily.get(active_sym)
+
+    render_stock_zone_chart(active_sym, df_active, sym_zones)
+    render_portfolio_section(res["price_lookup"], d_daily)
