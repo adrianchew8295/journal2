@@ -124,14 +124,14 @@ def render_portfolio_expansion(*args, **kwargs):
             rows_summary.append({
                 "代码": sym,
                 "持股量": round(shares, 4) if shares % 1 != 0 else int(shares),
-                "买入成本 ($)": round(cost, 2),
-                "最新现价 ($)": round(curr_p, 2),
+                "成本 ($)": round(cost, 2),
+                "现价 ($)": round(curr_p, 2),
                 "持仓市值 ($)": round(market_val, 2),
                 "浮动盈亏 ($)": round(pnl_dollar, 2),
                 "盈亏率 (%)": round(pnl_pct, 2),
                 "K线形态": pattern_txt,
-                "减仓卖出目标区": sell_zone,
-                "资金滚动指令": roll_advice
+                "减仓卖出区": sell_zone,
+                "实操指令": roll_advice
             })
 
     total_account_nav = total_market_val + cash_capital
@@ -149,36 +149,32 @@ def render_portfolio_expansion(*args, **kwargs):
 
     st.markdown("---")
 
-    # 4. 持仓资产与形态诊断明细大表 (注入高亮战术着色)
+    # 4. 持仓资产与形态诊断明细大表 (高亮战术着色)
     st.markdown("##### 📋 持仓资产与形态诊断明细")
     if rows_summary:
         df_display = pd.DataFrame(rows_summary)
 
-        # 高亮持仓表格函数
         def style_portfolio_table(row):
             styles = [""] * len(row)
             pnl_idx = df_display.columns.get_loc("浮动盈亏 ($)")
             rate_idx = df_display.columns.get_loc("盈亏率 (%)")
-            sell_idx = df_display.columns.get_loc("减仓卖出目标区")
-            act_idx = df_display.columns.get_loc("资金滚动指令")
+            sell_idx = df_display.columns.get_loc("减仓卖出区")
+            act_idx = df_display.columns.get_loc("实操指令")
 
             pnl_v = row["浮动盈亏 ($)"]
-            act_v = row["资金滚动指令"]
+            act_v = str(row["实操指令"])
 
-            # 盈亏着色
             if pnl_v > 0:
-                styles[pnl_idx] = "color: #34D399; font-weight: 800; font-family: 'JetBrains Mono';"
-                styles[rate_idx] = "color: #34D399; font-weight: 800; font-family: 'JetBrains Mono';"
+                styles[pnl_idx] = "color: #00E676; font-weight: 800; font-family: 'JetBrains Mono';"
+                styles[rate_idx] = "color: #00E676; font-weight: 800; font-family: 'JetBrains Mono';"
             elif pnl_v < 0:
-                styles[pnl_idx] = "color: #F87171; font-weight: 800; font-family: 'JetBrains Mono';"
-                styles[rate_idx] = "color: #F87171; font-weight: 800; font-family: 'JetBrains Mono';"
+                styles[pnl_idx] = "color: #FF5252; font-weight: 800; font-family: 'JetBrains Mono';"
+                styles[rate_idx] = "color: #FF5252; font-weight: 800; font-family: 'JetBrains Mono';"
 
-            # 减仓卖出目标区醒目金黄色
-            styles[sell_idx] = "color: #FCD34D; font-weight: 700; font-family: 'JetBrains Mono';"
+            styles[sell_idx] = "color: #FCD34D; font-weight: 800; font-family: 'JetBrains Mono';"
 
-            # 实操指令胶囊高亮
             if "加" in act_v or "企稳" in act_v:
-                styles[act_idx] = "background-color: #064E3B; color: #6EE7B7; font-weight: bold; border-radius: 4px;"
+                styles[act_idx] = "background-color: #064E3B; color: #34D399; font-weight: bold; border-radius: 4px;"
             elif "减仓" in act_v or "卖出" in act_v:
                 styles[act_idx] = "background-color: #78350F; color: #FCD34D; font-weight: bold; border-radius: 4px;"
             elif "设防" in act_v or "止损" in act_v:
@@ -201,7 +197,7 @@ def render_portfolio_expansion(*args, **kwargs):
 
     st.markdown("---")
 
-    # 5. 【高亮色彩 Table】闲置现金滚动买入推荐池 (完全采用高对比彩色表格)
+    # 5. 闲置现金滚动买入推荐池 (高亮 Table)
     st.markdown("##### 🎯 闲置现金滚动买入推荐池 & 调仓法则")
     
     held_syms = df_pos["Symbol"].tolist() if not df_pos.empty else []
@@ -221,7 +217,6 @@ def render_portfolio_expansion(*args, **kwargs):
                         "实操战略建议": v.get("action", "【分批买入】")
                     })
     
-    # 优质保底候选池
     if not buy_rows:
         default_candidates = [
             ("AMZN", 254.92, "$247.36 - $260.12", "【分批买入】"),
@@ -247,7 +242,6 @@ def render_portfolio_expansion(*args, **kwargs):
     with c_tbl_left:
         df_buy_candidates = pd.DataFrame(buy_rows)
 
-        # 高亮买入推荐池表格函数
         def style_buy_table(row):
             styles = [""] * len(row)
             sym_idx = df_buy_candidates.columns.get_loc("推荐龙头")
@@ -256,19 +250,13 @@ def render_portfolio_expansion(*args, **kwargs):
             shares_idx = df_buy_candidates.columns.get_loc("可用现金可买")
             act_idx = df_buy_candidates.columns.get_loc("实操战略建议")
 
-            act_v = row["实操战略建议"]
+            act_v = str(row["实操战略建议"])
 
-            # 标的代码与现价粗体高亮
             styles[sym_idx] = "color: #FFFFFF; font-weight: 800;"
             styles[price_idx] = "color: #FFFFFF; font-weight: 700; font-family: 'JetBrains Mono';"
-
-            # 建议建仓区间：天蓝色发光，一眼看出关键支撑价
             styles[zone_idx] = "color: #38BDF8; font-weight: 800; font-family: 'JetBrains Mono';"
-            
-            # 可买股数
             styles[shares_idx] = "color: #94A3B8; font-weight: 700; font-family: 'JetBrains Mono';"
 
-            # 建议高亮胶囊
             if "买入" in act_v:
                 styles[act_idx] = "background-color: #064E3B; color: #34D399; font-weight: 800; border-radius: 4px;"
             elif "加仓" in act_v or "持有" in act_v:
@@ -279,12 +267,7 @@ def render_portfolio_expansion(*args, **kwargs):
             return styles
 
         styled_buy_df = df_buy_candidates.style.apply(style_buy_table, axis=1)
-        st.dataframe(
-            styled_buy_df,
-            use_container_width=True,
-            height=240,
-            hide_index=True
-        )
+        st.dataframe(styled_buy_df, use_container_width=True, height=240, hide_index=True)
 
     with c_tbl_right:
         st.info("""
@@ -293,7 +276,7 @@ def render_portfolio_expansion(*args, **kwargs):
         2. **将收回的现金滚动买入左表 🟢 阶段1 (筑底)** 或出现 **早晨之星** 的优质标的。
         """)
 
-    # 6. 底部 AI 调仓数据包
+    # 6. 底部 AI 调仓数据包 (使用 .get() 彻底防 KeyError)
     st.markdown("---")
     st.markdown("#### 🤖 AI 资产滚动调仓诊断战报 (点击右上角复制)")
     md_report = f"""# 💼 交易员实操持仓与资产滚动 AI 诊断战报
@@ -305,6 +288,13 @@ def render_portfolio_expansion(*args, **kwargs):
 ### 2. 当前持仓明细
 """
     for r in rows_summary:
-        md_report += f"- **{r['代码']}**: {r['持股量']} 股 | 成本: `${r['买入成本 ($)']:.2f}` | 现价: `${r['最新价 ($)']:.2f}` | 盈亏: `{r['浮动盈亏 ($)']:+.2f} ({r['盈亏率 (%)']:+.2f}%)` | 指令: {r['资金滚动指令']}\n"
+        sym_v = r.get("代码", "")
+        sh_v = r.get("持股量", 0)
+        cost_v = r.get("成本 ($)", 0.0)
+        price_v = r.get("现价 ($)", 0.0)
+        pnl_v = r.get("浮动盈亏 ($)", 0.0)
+        rate_v = r.get("盈亏率 (%)", 0.0)
+        act_v = r.get("实操指令", "")
+        md_report += f"- **{sym_v}**: {sh_v} 股 | 成本: `${cost_v:.2f}` | 现价: `${price_v:.2f}` | 盈亏: `{pnl_v:+.2f} ({rate_v:+.2f}%)` | 指令: {act_v}\n"
 
     st.code(md_report, language="markdown")
